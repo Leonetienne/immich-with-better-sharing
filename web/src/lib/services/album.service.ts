@@ -5,6 +5,8 @@ import {
   AlbumUserRole,
   BulkIdErrorReason,
   deleteAlbum,
+  getAllAlbums,
+  getAuthStatus,
   removeUserFromAlbum,
   updateAlbumInfo,
   updateAlbumUser,
@@ -17,6 +19,7 @@ import {
 } from '@immich/sdk';
 import { modalManager, toastManager, type ActionItem } from '@immich/ui';
 import {
+  mdiLockOutline,
   mdiDownload,
   mdiImageOutline,
   mdiLink,
@@ -81,6 +84,7 @@ export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) =
     title: $t('create_link'),
     icon: mdiLink,
     color: 'primary',
+    $if: () => !album.isLocked,
     onAction: () => modalManager.show(SharedLinkCreateModal, { albumId: album.id }),
   };
 
@@ -163,8 +167,29 @@ export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponse
   return { AddAssets, Upload };
 };
 
+// Locked albums need an unlocked session and take their items out of every other place.
+const confirmLocked = async (prompt: string) => {
+  const $t = await getFormatter();
+  const { isElevated } = await getAuthStatus();
+  if (!isElevated) {
+    toastManager.warning($t('locked_album_requires_unlock'));
+    await goto(Route.pinPrompt({ continue: location.pathname + location.search }));
+    return false;
+  }
+
+  return modalManager.showDialog({ title: $t('locked_album'), prompt, icon: mdiLockOutline });
+};
+
 export const addAssetsToAlbums = async (albumIds: string[], assetIds: string[], { notify }: { notify: boolean }) => {
   const $t = await getFormatter();
+
+  if (!authManager.isSharedLink) {
+    const albums = await getAllAlbums({});
+    const hasLocked = albums.some(({ id, isLocked }) => isLocked && albumIds.includes(id));
+    if (hasLocked && !(await confirmLocked($t('locked_album_add_assets_confirm')))) {
+      return false;
+    }
+  }
 
   try {
     if (albumIds.length === 1) {
@@ -256,6 +281,10 @@ export const handleUpdateUserAlbumRole = async ({
 export const handleAddUsersToAlbum = async (album: AlbumResponseDto, users: UserResponseDto[]) => {
   const $t = await getFormatter();
 
+  if (album.isLocked && !(await confirmLocked($t('locked_album_add_users_confirm')))) {
+    return false;
+  }
+
   try {
     await addUsersToAlbum({ id: album.id, addUsersDto: { albumUsers: users.map(({ id }) => ({ userId: id })) } });
     eventManager.emit('AlbumShare');
@@ -328,6 +357,13 @@ const handleUpdateThumbnail = async (album: AlbumResponseDto, assetId: string) =
 
 export const handleUpdateAlbum = async ({ id }: { id: string }, dto: UpdateAlbumDto) => {
   const $t = await getFormatter();
+
+  if (
+    dto.isLocked !== undefined &&
+    !(await confirmLocked(dto.isLocked ? $t('locked_album_lock_confirm') : $t('locked_album_unlock_confirm')))
+  ) {
+    return false;
+  }
 
   try {
     const response = await updateAlbumInfo({ id, updateAlbumDto: dto });

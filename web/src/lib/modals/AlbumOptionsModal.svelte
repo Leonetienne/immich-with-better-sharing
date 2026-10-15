@@ -2,7 +2,10 @@
   import AlbumSharedLink from '$lib/components/album-page/AlbumSharedLink.svelte';
   import HeaderActionButton from '$lib/components/HeaderActionButton.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
+  import { goto } from '$app/navigation';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { Route } from '$lib/route';
   import {
     getAlbumActions,
     handleRemoveUserFromAlbum,
@@ -14,6 +17,7 @@
     AssetOrder,
     getAlbumInfo,
     getAllSharedLinks,
+    getAuthStatus,
     type AlbumResponseDto,
     type SharedLinkResponseDto,
     type UserResponseDto,
@@ -57,6 +61,23 @@
   };
 
   const { AddUsers, CreateSharedLink } = $derived(getAlbumActions($t, album));
+  const isOwner = $derived(
+    !readOnly &&
+      album.albumUsers.some(({ user, role }) => role === AlbumUserRole.Owner && user.id === authManager.user.id),
+  );
+
+  const handleLockedChange = async (isLocked: boolean) => {
+    const { isElevated } = await getAuthStatus();
+    if (!isElevated) {
+      onClose();
+      await goto(Route.pinPrompt({ continue: location.pathname + location.search }));
+      return;
+    }
+
+    if (!(await handleUpdateAlbum(album, { isLocked }))) {
+      album = { ...album };
+    }
+  };
 
   let sharedLinks: SharedLinkResponseDto[] = $state([]);
 
@@ -96,6 +117,9 @@
               checked={album.isActivityEnabled}
               onCheckedChange={(checked) => handleUpdateAlbum(album, { isActivityEnabled: checked })}
             />
+          </Field>
+          <Field label={$t('locked_album')} description={$t('locked_album_description')} disabled={!isOwner}>
+            <Switch checked={album.isLocked} onCheckedChange={handleLockedChange} />
           </Field>
         </div>
       </div>

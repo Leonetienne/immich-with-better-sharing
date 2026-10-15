@@ -17,10 +17,24 @@ import { MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { AlbumUserRole, Permission } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { requireElevatedPermission } from 'src/utils/access.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { findOrFail } from 'src/utils/misc.js';
 import { getPreferences } from 'src/utils/preferences.js';
+
+// Locked albums stay listed but reveal nothing without an elevated (PIN) session.
+const redactLocked = (auth: AuthDto, album: AlbumResponseDto): AlbumResponseDto =>
+  album.isLocked && !auth.session?.hasElevatedPermission
+    ? {
+        ...album,
+        albumName: '',
+        description: '',
+        albumThumbnailAssetId: null,
+        startDate: undefined,
+        endDate: undefined,
+      }
+    : album;
 
 @Injectable()
 export class AlbumService extends BaseService {
@@ -38,7 +52,8 @@ export class AlbumService extends BaseService {
     };
   }
 
-  async getAll({ user: { id: ownerId } }: AuthDto, { assetId, ...rest }: GetAlbumsDto): Promise<AlbumResponseDto[]> {
+  async getAll(auth: AuthDto, { assetId, ...rest }: GetAlbumsDto): Promise<AlbumResponseDto[]> {
+    const ownerId = auth.user.id;
     await this.albumRepository.updateThumbnails();
 
     const albums = assetId
@@ -57,15 +72,16 @@ export class AlbumService extends BaseService {
       albumMetadata[metadata.albumId] = metadata;
     }
 
-    return albums.map((album) => ({
-      ...mapAlbum(album),
-      sharedLinks: undefined,
-      startDate: asDateTimeString(albumMetadata[album.id]?.startDate ?? undefined),
-      endDate: asDateTimeString(albumMetadata[album.id]?.endDate ?? undefined),
-      assetCount: albumMetadata[album.id]?.assetCount ?? 0,
-      // lastModifiedAssetTimestamp is only used in mobile app, please remove if not need
-      lastModifiedAssetTimestamp: asDateTimeString(albumMetadata[album.id]?.lastModifiedAssetTimestamp ?? undefined),
-    }));
+    return albums.map((album) =>
+      redactLocked(auth, {
+        ...mapAlbum(album),
+        startDate: asDateTimeString(albumMetadata[album.id]?.startDate ?? undefined),
+        endDate: asDateTimeString(albumMetadata[album.id]?.endDate ?? undefined),
+        assetCount: albumMetadata[album.id]?.assetCount ?? 0,
+        // lastModifiedAssetTimestamp is only used in mobile app, please remove if not need
+        lastModifiedAssetTimestamp: asDateTimeString(albumMetadata[album.id]?.lastModifiedAssetTimestamp ?? undefined),
+      }),
+    );
   }
 
   async get(auth: AuthDto, id: string): Promise<AlbumResponseDto> {
@@ -109,11 +125,11 @@ export class AlbumService extends BaseService {
       }
     }
 
-    const allowedAssetIdsSet = await this.checkAccess({
-      auth,
-      permission: Permission.AssetShare,
-      ids: dto.assetIds || [],
-    });
+    if (dto.isLocked) {
+      requireElevatedPermission(auth);
+    }
+
+    const allowedAssetIdsSet = await this.getAddableAssetIds(auth, !!dto.isLocked, dto.assetIds || []);
     const assetIds = [...allowedAssetIdsSet].map((id) => id);
 
     const userMetadata = await this.userRepository.getMetadata(auth.user.id);
@@ -122,6 +138,7 @@ export class AlbumService extends BaseService {
       {
         albumName: dto.albumName,
         description: dto.description,
+        isLocked: dto.isLocked,
         albumThumbnailAssetId: assetIds[0] || null,
         order: getPreferences(userMetadata).albums.defaultAssetOrder,
       },
@@ -129,6 +146,10 @@ export class AlbumService extends BaseService {
       [{ userId: auth.user.id, role: AlbumUserRole.Owner }, ...albumUsers],
       auth.user.id,
     );
+
+    if (album.isLocked) {
+      await this.albumRepository.applyLock(album.id);
+    }
 
     for (const { userId } of albumUsers) {
       await this.eventRepository.emit('AlbumInvite', { id: album.id, userId, senderName: auth.user.name });
@@ -141,6 +162,14 @@ export class AlbumService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
 
     const album = await this.findOrFail(id, auth.user.id, { withAssets: true });
+
+    if (dto.isLocked !== undefined && dto.isLocked !== album.isLocked) {
+      await this.requireAccess({ auth, permission: Permission.AlbumDelete, ids: [id] });
+      requireElevatedPermission(auth);
+      if (dto.isLocked && album.sharedLinks?.length) {
+        throw new BadRequestException('Remove shared links before locking the album');
+      }
+    }
 
     if (dto.albumThumbnailAssetId) {
       const results = await this.albumRepository.getAssetIds(id, [dto.albumThumbnailAssetId]);
@@ -156,10 +185,17 @@ export class AlbumService extends BaseService {
         description: dto.description,
         albumThumbnailAssetId: dto.albumThumbnailAssetId,
         isActivityEnabled: dto.isActivityEnabled,
+        isLocked: dto.isLocked,
         order: dto.order,
       },
       auth.user.id,
     );
+
+    if (dto.isLocked === true && !album.isLocked) {
+      await this.albumRepository.applyLock(id);
+    } else if (dto.isLocked === false && album.isLocked) {
+      await this.albumRepository.releaseLock(id);
+    }
 
     return mapAlbum({ ...updatedAlbum, assets: album.assets });
   }
@@ -176,8 +212,17 @@ export class AlbumService extends BaseService {
     const results = await addAssets(
       auth,
       { access: this.accessRepository, bulk: this.albumRepository },
-      { parentId: id, assetIds: dto.ids, permission: Permission.AssetShare },
+      {
+        parentId: id,
+        assetIds: dto.ids,
+        permission: Permission.AssetShare,
+        allowedAssetIds: await this.getAddableAssetIds(auth, album.isLocked, dto.ids),
+      },
     );
+
+    if (album.isLocked && results.some(({ success }) => success)) {
+      await this.albumRepository.applyLock(id);
+    }
 
     const { id: firstNewAssetId } = results.find(({ success }) => success) || {};
     if (firstNewAssetId) {
@@ -215,21 +260,27 @@ export class AlbumService extends BaseService {
       return results;
     }
 
-    const allowedAssetIds = await this.checkAccess({ auth, permission: Permission.AssetShare, ids: dto.assetIds });
-    if (allowedAssetIds.size === 0) {
+    const lockedAssetIds = await this.getAddableAssetIds(auth, true, dto.assetIds);
+    const unlockedAssetIds = await this.getAddableAssetIds(auth, false, dto.assetIds);
+    if (lockedAssetIds.size === 0 && unlockedAssetIds.size === 0) {
       results.error = BulkIdErrorReason.NO_PERMISSION;
       return results;
     }
 
     const albumAssetValues: { albumId: string; assetId: string }[] = [];
     const events: { id: string; userIds: string[]; recipientIds: string[] }[] = [];
+    const lockedAlbumIds: string[] = [];
     for (const albumId of allowedAlbumIds) {
+      const album = await this.findOrFail(albumId, auth.user.id, { withAssets: false });
+      const allowedAssetIds = album.isLocked ? lockedAssetIds : unlockedAssetIds;
       const existingAssetIds = await this.albumRepository.getAssetIds(albumId, [...allowedAssetIds]);
       const notPresentAssetIds = [...allowedAssetIds.difference(existingAssetIds)];
       if (notPresentAssetIds.length === 0) {
         continue;
       }
-      const album = await this.findOrFail(albumId, auth.user.id, { withAssets: false });
+      if (album.isLocked) {
+        lockedAlbumIds.push(albumId);
+      }
       results.error = undefined;
       results.success = true;
 
@@ -251,6 +302,9 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
+    for (const albumId of lockedAlbumIds) {
+      await this.albumRepository.applyLock(albumId);
+    }
     for (const event of events) {
       await this.eventRepository.emit('AlbumUpdate', event);
     }
@@ -309,6 +363,10 @@ export class AlbumService extends BaseService {
       await this.eventRepository.emit('AlbumInvite', { id, userId, senderName: auth.user.name });
     }
 
+    if (album.isLocked) {
+      await this.albumRepository.applyLock(id);
+    }
+
     return mapAlbum(await this.findOrFail(id, auth.user.id, { withAssets: true }));
   }
 
@@ -350,6 +408,19 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumUserRepository.update({ albumId: id, userId }, { role: dto.role });
+  }
+
+  // Locked albums also take the user's own locked assets. Unlocked albums never take assets locked for the user.
+  private async getAddableAssetIds(auth: AuthDto, isLocked: boolean, assetIds: string[]): Promise<Set<string>> {
+    const shareable = await this.checkAccess({ auth, permission: Permission.AssetShare, ids: assetIds });
+    if (isLocked) {
+      const ownLocked = auth.session?.hasElevatedPermission
+        ? await this.accessRepository.asset.checkOwnerAccess(auth.user.id, new Set(assetIds), true)
+        : new Set<string>();
+      return shareable.union(ownLocked);
+    }
+
+    return shareable.difference(await this.albumRepository.getLockedAssetIds(auth.user.id, [...shareable]));
   }
 
   private findOrFail(id: string, authUserId: string, options: AlbumInfoOptions) {

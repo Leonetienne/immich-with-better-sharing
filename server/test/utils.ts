@@ -387,6 +387,7 @@ export const getMocks = () => {
 
   // every new user gets a cluster group, which is incidental to most tests
   mocks.clusterGroup.create.mockResolvedValue(ClusterGroupFactory.create());
+  mocks.album.getLockedAssetIds.mockResolvedValue(new Set());
 
   return mocks;
 };

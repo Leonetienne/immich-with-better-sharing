@@ -13,6 +13,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { DB } from 'src/schema/index.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
+import { inLockedAlbumOf } from 'src/utils/database.js';
 
 export interface MapMarkerSearchOptions {
   isArchived?: boolean;
@@ -106,6 +107,7 @@ export class MapRepository {
       .$if(isFavorite !== undefined, (q) => q.where('isFavorite', '=', isFavorite!))
       .$if(fileCreatedAfter !== undefined, (q) => q.where('fileCreatedAt', '>=', fileCreatedAfter!))
       .$if(fileCreatedBefore !== undefined, (q) => q.where('fileCreatedAt', '<=', fileCreatedBefore!))
+      .where((eb) => eb.not(inLockedAlbumOf(eb, authUserId)))
       .where((eb) => {
         const expression: Expression<SqlBool>[] = [];
 

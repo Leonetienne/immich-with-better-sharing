@@ -8,7 +8,7 @@
   import { locale } from '$lib/stores/preferences.store';
   import { AlbumUserRole, type AlbumResponseDto } from '@immich/sdk';
   import { Icon, menuManager } from '@immich/ui';
-  import { mdiShareVariantOutline } from '@mdi/js';
+  import { mdiLockOutline, mdiShareVariantOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -47,7 +47,14 @@
   {oncontextmenu}
 >
   <td class="text-md w-8/12 items-center text-start text-ellipsis sm:w-4/12 md:w-4/12 xl:w-[30%] 2xl:w-[40%]">
-    {album.albumName}
+    {#if album.isLocked}
+      <Icon icon={mdiLockOutline} size="16" class="me-1 inline opacity-70" />
+    {/if}
+    {#if album.isLocked && !album.albumName}
+      <span class="blur-xs select-none">{$t('locked_album')}</span>
+    {:else}
+      {album.albumName}
+    {/if}
     {#if album.shared}
       <Icon
         icon={mdiShareVariantOutline}

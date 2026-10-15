@@ -37,6 +37,7 @@ import {
   anyUuid,
   asUuid,
   hasPeople,
+  inLockedAlbumOf,
   inSharedAlbum,
   removeUndefinedKeys,
   truncatedDate,
@@ -129,6 +130,8 @@ interface AssetBuilderOptions {
 export interface TimeBucketOptions extends AssetBuilderOptions {
   order?: AssetOrder;
   orderBy?: AssetOrderBy;
+  // viewing a locked album in an elevated session
+  isLockedAlbum?: boolean;
 }
 
 export interface TimeBucketItem {
@@ -781,6 +784,7 @@ export class AssetRepository {
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Other).as(AssetType.Other))
       .where('ownerId', '=', asUuid(ownerId))
       .$if(visibility === undefined, withDefaultVisibility)
+      .where((eb) => eb.not(inLockedAlbumOf(eb, ownerId)))
       .$if(!!visibility, (qb) => qb.where('asset.visibility', '=', visibility!))
       .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
       .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
@@ -837,8 +841,9 @@ export class AssetRepository {
 
             return withBoundingBox(withBoundingCircle, bbox);
           })
-          .$if(options.visibility === undefined, withDefaultVisibility)
+          .$if(options.visibility === undefined && !options.isLockedAlbum, withDefaultVisibility)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          .$if(!options.isLockedAlbum, (qb) => qb.where((eb) => eb.not(inLockedAlbumOf(eb, auth.user.id))))
           .$if(!!options.albumId, (qb) =>
             qb
               .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
@@ -914,8 +919,9 @@ export class AssetRepository {
           )
           .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
-          .$if(options.visibility === undefined, withDefaultVisibility)
+          .$if(options.visibility === undefined && !options.isLockedAlbum, withDefaultVisibility)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          .$if(!options.isLockedAlbum, (qb) => qb.where((eb) => eb.not(inLockedAlbumOf(eb, auth.user.id))))
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;
             const circle = getBoundingCircle(bbox);

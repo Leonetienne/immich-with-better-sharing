@@ -6,7 +6,7 @@ import { PersonUserRole } from 'src/dtos/person.dto.js';
 import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
 import { PersonId } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
-import { asUuid } from 'src/utils/database.js';
+import { asUuid, inLockedAlbumOf } from 'src/utils/database.js';
 
 class ActivityAccess {
   constructor(private db: Kysely<DB>) {}
@@ -51,7 +51,7 @@ class ActivityAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkCreateAccess(userId: string, albumIds: Set<string>) {
+  async checkCreateAccess(userId: string, albumIds: Set<string>, hasElevatedPermission?: boolean) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
@@ -63,6 +63,7 @@ class ActivityAccess {
       .innerJoin('user', (join) => join.onRef('user.id', '=', 'albumUsers.userId').on('user.deletedAt', 'is', null))
       .where('album.id', 'in', [...albumIds])
       .where('album.isActivityEnabled', '=', true)
+      .$if(!hasElevatedPermission, (qb) => qb.where('album.isLocked', '=', false))
       .where((eb) => eb('user.id', '=', userId))
       .where('album.deletedAt', 'is', null)
       .execute()
@@ -75,7 +76,7 @@ class AlbumAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkOwnerAccess(userId: string, albumIds: Set<string>) {
+  async checkOwnerAccess(userId: string, albumIds: Set<string>, hasElevatedPermission?: boolean) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
@@ -84,6 +85,7 @@ class AlbumAccess {
       .selectFrom('album')
       .select('album.id')
       .where('album.id', 'in', [...albumIds])
+      .$if(!hasElevatedPermission, (qb) => qb.where('album.isLocked', '=', false))
       .innerJoin('album_user', (join) =>
         join
           .onRef('album.id', '=', 'album_user.albumId')
@@ -97,7 +99,12 @@ class AlbumAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkSharedAlbumAccess(userId: string, albumIds: Set<string>, access: AlbumUserRole) {
+  async checkSharedAlbumAccess(
+    userId: string,
+    albumIds: Set<string>,
+    access: AlbumUserRole,
+    hasElevatedPermission?: boolean,
+  ) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
@@ -112,6 +119,7 @@ class AlbumAccess {
       .innerJoin('user', (join) => join.onRef('user.id', '=', 'album_user.userId').on('user.deletedAt', 'is', null))
       .where('album.id', 'in', [...albumIds])
       .where('album.deletedAt', 'is', null)
+      .$if(!hasElevatedPermission, (qb) => qb.where('album.isLocked', '=', false))
       .where('user.id', '=', userId)
       .where('album_user.role', 'in', [...accessRole])
       .execute()
@@ -127,9 +135,11 @@ class AlbumAccess {
 
     return this.db
       .selectFrom('shared_link')
+      .innerJoin('album', 'album.id', 'shared_link.albumId')
       .select('shared_link.albumId')
       .where('shared_link.id', '=', sharedLinkId)
       .where('shared_link.albumId', 'in', [...albumIds])
+      .where('album.isLocked', '=', false)
       .execute()
       .then(
         (sharedLinks) =>
@@ -145,43 +155,51 @@ class AssetAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkAlbumAccess(userId: string, assetIds: Set<string>) {
+  async checkAlbumAccess(userId: string, assetIds: Set<string>, hasElevatedPermission?: boolean) {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
 
-    return this.db
-      .with('target', (qb) => qb.selectNoFrom(sql`array[${sql.join([...assetIds])}]::uuid[]`.as('ids')))
-      .selectFrom('album')
-      .innerJoin('album_asset as albumAssets', 'album.id', 'albumAssets.albumId')
-      .innerJoin('asset', (join) =>
-        join.onRef('asset.id', '=', 'albumAssets.assetId').on('asset.deletedAt', 'is', null),
-      )
-      .leftJoin('album_user as albumUsers', 'albumUsers.albumId', 'album.id')
-      .leftJoin('user', (join) => join.onRef('user.id', '=', 'albumUsers.userId').on('user.deletedAt', 'is', null))
-      .crossJoin('target')
-      .select(['asset.id', 'asset.livePhotoVideoId'])
-      .where((eb) =>
-        eb.or([
-          eb('asset.id', '=', sql<string>`any(target.ids)`),
-          eb('asset.livePhotoVideoId', '=', sql<string>`any(target.ids)`),
-        ]),
-      )
-      .where('user.id', '=', userId)
-      .where('album.deletedAt', 'is', null)
-      .execute()
-      .then((assets) => {
-        const allowedIds = new Set<string>();
-        for (const asset of assets) {
-          if (asset.id && assetIds.has(asset.id)) {
-            allowedIds.add(asset.id);
+    return (
+      this.db
+        .with('target', (qb) => qb.selectNoFrom(sql`array[${sql.join([...assetIds])}]::uuid[]`.as('ids')))
+        .selectFrom('album')
+        .innerJoin('album_asset as albumAssets', 'album.id', 'albumAssets.albumId')
+        .innerJoin('asset', (join) =>
+          join.onRef('asset.id', '=', 'albumAssets.assetId').on('asset.deletedAt', 'is', null),
+        )
+        .leftJoin('album_user as albumUsers', 'albumUsers.albumId', 'album.id')
+        .leftJoin('user', (join) => join.onRef('user.id', '=', 'albumUsers.userId').on('user.deletedAt', 'is', null))
+        .crossJoin('target')
+        .select(['asset.id', 'asset.livePhotoVideoId'])
+        .where((eb) =>
+          eb.or([
+            eb('asset.id', '=', sql<string>`any(target.ids)`),
+            eb('asset.livePhotoVideoId', '=', sql<string>`any(target.ids)`),
+          ]),
+        )
+        .where('user.id', '=', userId)
+        .where('album.deletedAt', 'is', null)
+        // locked assets are only reachable through locked albums of an elevated session
+        .where((eb) =>
+          hasElevatedPermission
+            ? eb.or([eb('album.isLocked', '=', true), eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))])
+            : eb.and([eb('album.isLocked', '=', false), eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))]),
+        )
+        .execute()
+        .then((assets) => {
+          const allowedIds = new Set<string>();
+          for (const asset of assets) {
+            if (asset.id && assetIds.has(asset.id)) {
+              allowedIds.add(asset.id);
+            }
+            if (asset.livePhotoVideoId && assetIds.has(asset.livePhotoVideoId)) {
+              allowedIds.add(asset.livePhotoVideoId);
+            }
           }
-          if (asset.livePhotoVideoId && assetIds.has(asset.livePhotoVideoId)) {
-            allowedIds.add(asset.livePhotoVideoId);
-          }
-        }
-        return allowedIds;
-      });
+          return allowedIds;
+        })
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
@@ -208,25 +226,29 @@ class AssetAccess {
       return new Set<string>();
     }
 
-    return this.db
-      .selectFrom('partner')
-      .innerJoin('user as sharedBy', (join) =>
-        join.onRef('sharedBy.id', '=', 'partner.sharedById').on('sharedBy.deletedAt', 'is', null),
-      )
-      .innerJoin('asset', (join) => join.onRef('asset.ownerId', '=', 'sharedBy.id').on('asset.deletedAt', 'is', null))
-      .select('asset.id')
-      .where('partner.sharedWithId', '=', userId)
-      .$if(requireAllowEdits, (qb) => qb.where('partner.allowEdits', '=', true))
-      .where((eb) =>
-        eb.or([
-          eb('asset.visibility', '=', sql.lit(AssetVisibility.Timeline)),
-          eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
-        ]),
-      )
+    return (
+      this.db
+        .selectFrom('partner')
+        .innerJoin('user as sharedBy', (join) =>
+          join.onRef('sharedBy.id', '=', 'partner.sharedById').on('sharedBy.deletedAt', 'is', null),
+        )
+        .innerJoin('asset', (join) => join.onRef('asset.ownerId', '=', 'sharedBy.id').on('asset.deletedAt', 'is', null))
+        .select('asset.id')
+        .where('partner.sharedWithId', '=', userId)
+        .$if(requireAllowEdits, (qb) => qb.where('partner.allowEdits', '=', true))
+        // assets in the user's own locked albums are only reachable through those albums
+        .where((eb) => eb.not(inLockedAlbumOf(eb, userId)))
+        .where((eb) =>
+          eb.or([
+            eb('asset.visibility', '=', sql.lit(AssetVisibility.Timeline)),
+            eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
+          ]),
+        )
 
-      .where('asset.id', 'in', [...assetIds])
-      .execute()
-      .then((assets) => new Set(assets.map((asset) => asset.id)));
+        .where('asset.id', 'in', [...assetIds])
+        .execute()
+        .then((assets) => new Set(assets.map((asset) => asset.id)))
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
@@ -238,14 +260,25 @@ class AssetAccess {
 
     return this.db
       .selectFrom('shared_link')
-      .leftJoin('album', (join) => join.onRef('album.id', '=', 'shared_link.albumId').on('album.deletedAt', 'is', null))
+      .leftJoin('album', (join) =>
+        join
+          .onRef('album.id', '=', 'shared_link.albumId')
+          .on('album.deletedAt', 'is', null)
+          .on('album.isLocked', '=', false),
+      )
       .leftJoin('shared_link_asset', 'shared_link_asset.sharedLinkId', 'shared_link.id')
       .leftJoin('asset', (join) =>
-        join.onRef('asset.id', '=', 'shared_link_asset.assetId').on('asset.deletedAt', 'is', null),
+        join
+          .onRef('asset.id', '=', 'shared_link_asset.assetId')
+          .on('asset.deletedAt', 'is', null)
+          .on('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
       )
       .leftJoin('album_asset', 'album_asset.albumId', 'album.id')
       .leftJoin('asset as albumAssets', (join) =>
-        join.onRef('albumAssets.id', '=', 'album_asset.assetId').on('albumAssets.deletedAt', 'is', null),
+        join
+          .onRef('albumAssets.id', '=', 'album_asset.assetId')
+          .on('albumAssets.deletedAt', 'is', null)
+          .on('albumAssets.visibility', '!=', sql.lit(AssetVisibility.Locked)),
       )
       .select([
         'asset.id as assetId',

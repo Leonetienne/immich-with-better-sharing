@@ -1,4 +1,4 @@
-import { getAllAlbums } from '@immich/sdk';
+import { getAllAlbums, getAuthStatus } from '@immich/sdk';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';
@@ -7,11 +7,13 @@ export const load = (async ({ url }) => {
   await authenticate(url);
   const sharedAlbums = await getAllAlbums({ isShared: true });
   const albums = await getAllAlbums({ isOwned: true });
+  const { isElevated } = await getAuthStatus();
   const $t = await getFormatter();
 
   return {
     albums,
     sharedAlbums,
+    isElevated,
     meta: {
       title: $t('albums'),
     },

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumUserRole, AssetOrder, UserMetadataKey } from 'src/enum.js';
 import { AlbumService } from 'src/services/album.service.js';
@@ -202,6 +202,91 @@ describe(AlbumService.name, () => {
     expect(result).toHaveLength(1);
     expect(result[0].assetCount).toEqual(1);
     expect(mocks.album.getAll).toHaveBeenCalledTimes(1);
+  });
+
+  describe('locked albums', () => {
+    it('should redact locked albums without an elevated session', async () => {
+      const album = AlbumFactory.from({ albumName: 'secret', isLocked: true }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.album.getAll.mockResolvedValue([getForAlbum(album)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+
+      const [locked] = await sut.getAll(AuthFactory.create(owner), {});
+      expect(locked).toMatchObject({ isLocked: true, albumName: '', albumThumbnailAssetId: null });
+
+      const [unlocked] = await sut.getAll(AuthFactory.from(owner).session({ hasElevatedPermission: true }).build(), {});
+      expect(unlocked).toMatchObject({ isLocked: true, albumName: 'secret' });
+    });
+
+    it('should require an elevated session to create a locked album', async () => {
+      await expect(sut.create(AuthFactory.create(), { albumName: 'secret', isLocked: true })).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(mocks.album.create).not.toHaveBeenCalled();
+    });
+
+    it('should lock the assets of a new locked album', async () => {
+      const album = AlbumFactory.from({ isLocked: true }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const auth = AuthFactory.from(owner).session({ hasElevatedPermission: true }).build();
+      const assetId = newUuid();
+
+      mocks.album.create.mockResolvedValue(getForAlbum(album));
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+
+      await sut.create(auth, { albumName: 'secret', isLocked: true, assetIds: [assetId] });
+
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([assetId]), true);
+      expect(mocks.album.applyLock).toHaveBeenCalledWith(album.id);
+    });
+
+    it('should keep assets locked for the user out of unlocked albums', async () => {
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const [lockedId, freeId] = [newUuid(), newUuid()];
+
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValue(new Set());
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([lockedId, freeId]));
+      mocks.album.getLockedAssetIds.mockResolvedValue(new Set([lockedId]));
+
+      const results = await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [lockedId, freeId] });
+
+      expect(results).toEqual([
+        { id: lockedId, success: false, error: BulkIdErrorReason.NO_PERMISSION },
+        { id: freeId, success: true },
+      ]);
+      expect(mocks.album.applyLock).not.toHaveBeenCalled();
+    });
+
+    it('should not lock an album that has shared links', async () => {
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const auth = AuthFactory.from(owner).session({ hasElevatedPermission: true }).build();
+
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue({ ...getForAlbum(album), sharedLinks: [{ id: newUuid() }] } as any);
+
+      await expect(sut.update(auth, album.id, { isLocked: true })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.album.update).not.toHaveBeenCalled();
+    });
+
+    it('should release the lock when converting back to a normal album', async () => {
+      const album = AlbumFactory.from({ isLocked: true }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const auth = AuthFactory.from(owner).session({ hasElevatedPermission: true }).build();
+
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum({ ...album, isLocked: false }));
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+
+      await sut.update(auth, album.id, { isLocked: false });
+
+      expect(mocks.album.releaseLock).toHaveBeenCalledWith(album.id);
+    });
   });
 
   describe('create', () => {
@@ -605,7 +690,7 @@ describe(AlbumService.name, () => {
       );
 
       expect(mocks.albumUser.delete).not.toHaveBeenCalled();
-      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(user1.id, new Set([album.id]));
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(user1.id, new Set([album.id]), undefined);
     });
 
     it('should allow a shared user to remove themselves', async () => {
@@ -694,7 +779,7 @@ describe(AlbumService.name, () => {
       await sut.get(AuthFactory.create(owner), album.id);
 
       expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, owner.id);
-      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([album.id]));
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([album.id]), undefined);
     });
 
     it('should get a shared album via a shared link', async () => {
@@ -740,6 +825,7 @@ describe(AlbumService.name, () => {
         user.id,
         new Set([album.id]),
         AlbumUserRole.Viewer,
+        undefined,
       );
     });
 
@@ -747,11 +833,12 @@ describe(AlbumService.name, () => {
       const auth = AuthFactory.create();
       await expect(sut.get(auth, 'album-123')).rejects.toBeInstanceOf(BadRequestException);
 
-      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set(['album-123']));
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set(['album-123']), undefined);
       expect(mocks.access.album.checkSharedAlbumAccess).toHaveBeenCalledWith(
         auth.user.id,
         new Set(['album-123']),
         AlbumUserRole.Viewer,
+        undefined,
       );
     });
   });

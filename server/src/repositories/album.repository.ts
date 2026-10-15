@@ -14,11 +14,11 @@ import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
-import { AlbumUserRole } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
-import { asUuid, dummy, withDefaultVisibility } from 'src/utils/database.js';
+import { anyUuid, asUuid, dummy, inLockedAlbumOf } from 'src/utils/database.js';
 
 export interface AlbumAssetCount {
   albumId: string;
@@ -65,7 +65,12 @@ const withAssets = (eb: ExpressionBuilder<DB, 'album'>) => {
         .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
         .whereRef('album_asset.albumId', '=', 'album.id')
         .where('asset.deletedAt', 'is', null)
-        .$call(withDefaultVisibility)
+        .where((eb) =>
+          eb.or([
+            eb('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]),
+            eb.and([sql<boolean>`"album"."isLocked"`, eb('asset.visibility', '=', sql.lit(AssetVisibility.Locked))]),
+          ]),
+        )
         .orderBy('asset.fileCreatedAt', 'desc')
         .as('asset'),
     )
@@ -168,8 +173,14 @@ export class AlbumRepository {
     return (
       this.db
         .selectFrom('asset')
-        .$call(withDefaultVisibility)
         .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+        .innerJoin('album', 'album.id', 'album_asset.albumId')
+        .where((eb) =>
+          eb.or([
+            eb('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]),
+            eb.and([eb('album.isLocked', '=', true), eb('asset.visibility', '=', sql.lit(AssetVisibility.Locked))]),
+          ]),
+        )
         .select('album_asset.albumId as albumId')
         .select((eb) => eb.fn.min(sql<Date>`("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('startDate'))
         .select((eb) => eb.fn.max(sql<Date>`("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('endDate'))
@@ -242,6 +253,98 @@ export class AlbumRepository {
 
   async deleteAll(userId: string): Promise<void> {
     await this.db.deleteFrom('album').where(isAlbumOwned(userId)).execute();
+  }
+
+  async getLockedAssetIds(userId: string, assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', anyUuid(assetIds))
+      .where((eb) => inLockedAlbumOf(eb, userId))
+      .execute();
+    return new Set(rows.map(({ id }) => id));
+  }
+
+  // Album users' own assets get locked and the album's assets leave the users' own unlocked albums.
+  async applyLock(albumId: string): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await tx
+        .updateTable('asset')
+        .set({ visibility: AssetVisibility.Locked })
+        .where('asset.id', 'in', (eb) =>
+          eb.selectFrom('album_asset').select('album_asset.assetId').where('album_asset.albumId', '=', albumId),
+        )
+        .where('asset.ownerId', 'in', (eb) =>
+          eb.selectFrom('album_user').select('album_user.userId').where('album_user.albumId', '=', albumId),
+        )
+        .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+        .execute();
+
+      await tx
+        .deleteFrom('album_asset')
+        .where('album_asset.assetId', 'in', (eb) =>
+          eb
+            .selectFrom('album_asset as locked_asset')
+            .select('locked_asset.assetId')
+            .where('locked_asset.albumId', '=', albumId),
+        )
+        .where('album_asset.albumId', 'in', (eb) =>
+          eb
+            .selectFrom('album as other_album')
+            .innerJoin('album_user as other_owner', (join) =>
+              join
+                .onRef('other_owner.albumId', '=', 'other_album.id')
+                .on('other_owner.role', '=', sql.lit(AlbumUserRole.Owner)),
+            )
+            .select('other_album.id')
+            .where('other_album.isLocked', '=', false)
+            .where('other_owner.userId', 'in', (eb) =>
+              eb
+                .selectFrom('album_user as locked_user')
+                .select('locked_user.userId')
+                .where('locked_user.albumId', '=', albumId),
+            ),
+        )
+        .execute();
+    });
+  }
+
+  // Album users' own assets become visible again unless another of their locked albums still holds them.
+  async releaseLock(albumId: string): Promise<void> {
+    await this.db
+      .updateTable('asset')
+      .set({ visibility: AssetVisibility.Timeline })
+      .where('asset.id', 'in', (eb) =>
+        eb.selectFrom('album_asset').select('album_asset.assetId').where('album_asset.albumId', '=', albumId),
+      )
+      .where('asset.ownerId', 'in', (eb) =>
+        eb.selectFrom('album_user').select('album_user.userId').where('album_user.albumId', '=', albumId),
+      )
+      .where('asset.visibility', '=', AssetVisibility.Locked)
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('album_asset as other_asset')
+              .innerJoin('album as other_album', (join) =>
+                join
+                  .onRef('other_album.id', '=', 'other_asset.albumId')
+                  .on('other_album.isLocked', '=', true)
+                  .on('other_album.deletedAt', 'is', null)
+                  .on('other_album.id', '!=', albumId),
+              )
+              .innerJoin('album_user as other_user', 'other_user.albumId', 'other_album.id')
+              .select('other_asset.assetId')
+              .whereRef('other_asset.assetId', '=', 'asset.id')
+              .whereRef('other_user.userId', '=', 'asset.ownerId'),
+          ),
+        ),
+      )
+      .execute();
   }
 
   @GenerateSql({ params: [[DummyValue.UUID]] })

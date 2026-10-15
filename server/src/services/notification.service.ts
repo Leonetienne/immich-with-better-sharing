@@ -30,6 +30,11 @@ import { getExternalDomain } from 'src/utils/misc.js';
 import { isEqualObject } from 'src/utils/object.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
+// notifications and emails reveal neither name nor thumbnail of locked albums
+const maskLockedAlbum = <T extends { isLocked: boolean; albumName: string; albumThumbnailAssetId: string | null }>(
+  album: T | undefined,
+) => (album?.isLocked ? { ...album, albumName: 'Locked album', albumThumbnailAssetId: null } : album);
+
 @Injectable()
 export class NotificationService extends BaseService {
   private static albumUpdateEmailDelayMs = 300_000;
@@ -324,7 +329,7 @@ export class NotificationService extends BaseService {
 
   @OnJob({ name: JobName.NotifyAlbumInvite, queue: QueueName.Notification })
   async handleAlbumInvite({ id, recipientId, senderName }: JobOf<JobName.NotifyAlbumInvite>) {
-    const album = await this.albumRepository.getById(id, { withAssets: false });
+    const album = maskLockedAlbum(await this.albumRepository.getById(id, { withAssets: false }));
     if (!album) {
       return JobStatus.Skipped;
     }
@@ -374,7 +379,7 @@ export class NotificationService extends BaseService {
 
   @OnJob({ name: JobName.NotifyAlbumUpdate, queue: QueueName.Notification })
   async handleAlbumUpdate({ id, recipientId }: JobOf<JobName.NotifyAlbumUpdate>) {
-    const album = await this.albumRepository.getById(id, { withAssets: false });
+    const album = maskLockedAlbum(await this.albumRepository.getById(id, { withAssets: false }));
 
     if (!album) {
       return JobStatus.Skipped;
