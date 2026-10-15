@@ -9,6 +9,9 @@ import {
   LoginCredentialDto,
   LoginResponseDto,
   LogoutResponseDto,
+  MfaDisableDto,
+  MfaEnableDto,
+  MfaSetupResponseDto,
   PinCodeChangeDto,
   PinCodeResetDto,
   PinCodeSetupDto,
@@ -154,6 +157,41 @@ export class AuthController {
   })
   async resetPinCode(@Auth() auth: AuthDto, @Body() dto: PinCodeResetDto): Promise<void> {
     return this.service.resetPinCode(auth, dto);
+  }
+
+  @Post('mfa/setup')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Start MFA setup',
+    description: 'Generate a new TOTP secret for the current user. MFA stays disabled until confirmed with a code.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  setupMfa(@Auth() auth: AuthDto): Promise<MfaSetupResponseDto> {
+    return this.service.setupMfa(auth);
+  }
+
+  @Post('mfa/enable')
+  @Authenticated()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Enable MFA',
+    description: 'Enable MFA for the current user by confirming a TOTP code for the pending secret.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  enableMfa(@Auth() auth: AuthDto, @Body() dto: MfaEnableDto): Promise<void> {
+    return this.service.enableMfa(auth, dto);
+  }
+
+  @Delete('mfa')
+  @Authenticated()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Disable MFA',
+    description: 'Disable MFA for the current user by providing a TOTP code or the account password.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  disableMfa(@Auth() auth: AuthDto, @Body() dto: MfaDisableDto): Promise<void> {
+    return this.service.disableMfa(auth, dto);
   }
 
   @Post('session/unlock')

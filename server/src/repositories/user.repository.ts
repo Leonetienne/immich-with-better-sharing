@@ -102,7 +102,7 @@ export class UserRepository {
   getForPinCode(id: string) {
     return this.db
       .selectFrom('user')
-      .select(['user.pinCode', 'user.password'])
+      .select(['user.pinCode', 'user.password', 'user.mfaSecret', 'user.mfaEnabled'])
       .where('user.id', '=', id)
       .where('user.deletedAt', 'is', null)
       .executeTakeFirstOrThrow();
@@ -124,7 +124,7 @@ export class UserRepository {
       .selectFrom('user')
       .select(columns.userAdmin)
       .select(withMetadata)
-      .$if(!!options?.withPassword, (eb) => eb.select('password'))
+      .$if(!!options?.withPassword, (eb) => eb.select(['password', 'mfaEnabled', 'mfaSecret']))
       .where('email', '=', email)
       .where('user.deletedAt', 'is', null)
       .executeTakeFirst();

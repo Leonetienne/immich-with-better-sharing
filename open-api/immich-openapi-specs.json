@@ -5772,6 +5772,132 @@
         "x-immich-state": "Stable"
       }
     },
+    "/auth/mfa": {
+      "delete": {
+        "description": "Disable MFA for the current user by providing a TOTP code or the account password.",
+        "operationId": "disableMfa",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaDisableDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Disable MFA",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/auth/mfa/enable": {
+      "post": {
+        "description": "Enable MFA for the current user by confirming a TOTP code for the pending secret.",
+        "operationId": "enableMfa",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaEnableDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Enable MFA",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/auth/mfa/setup": {
+      "post": {
+        "description": "Generate a new TOTP secret for the current user. MFA stays disabled until confirmed with a code.",
+        "operationId": "setupMfa",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start MFA setup",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
     "/auth/pin-code": {
       "delete": {
         "description": "Reset the pin code for the current user by providing the account password",
@@ -21520,6 +21646,10 @@
             "description": "Is elevated session",
             "type": "boolean"
           },
+          "mfa": {
+            "description": "Has MFA enabled",
+            "type": "boolean"
+          },
           "password": {
             "description": "Has password set",
             "type": "boolean"
@@ -21535,6 +21665,7 @@
         },
         "required": [
           "isElevated",
+          "mfa",
           "password",
           "pinCode"
         ],
@@ -23003,6 +23134,12 @@
             "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
             "type": "string"
           },
+          "mfaCode": {
+            "description": "TOTP code, required if MFA is enabled",
+            "example": "123456",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
           "password": {
             "description": "User password",
             "example": "password",
@@ -24463,6 +24600,52 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "MfaDisableDto": {
+        "properties": {
+          "code": {
+            "description": "TOTP code",
+            "example": "123456",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "password": {
+            "description": "User password (required if code is not provided)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MfaEnableDto": {
+        "properties": {
+          "code": {
+            "description": "TOTP code",
+            "example": "123456",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "MfaSetupResponseDto": {
+        "properties": {
+          "otpauthUri": {
+            "description": "otpauth URI for authenticator apps",
+            "type": "string"
+          },
+          "secret": {
+            "description": "Base32 TOTP secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "otpauthUri",
+          "secret"
+        ],
         "type": "object"
       },
       "MirrorAxis": {

@@ -11,6 +11,9 @@ import {
   ChangePasswordDto,
   LoginCredentialDto,
   LogoutResponseDto,
+  MfaDisableDto,
+  MfaEnableDto,
+  MfaSetupResponseDto,
   OAuthBackchannelLogoutDto,
   OAuthCallbackDto,
   OAuthConfigDto,
@@ -30,6 +33,7 @@ import { isGranted } from 'src/utils/access.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
+import { generateTotpSecret, getTotpUri, verifyTotp } from 'src/utils/totp.js';
 
 export interface LoginDetails {
   isSecure: boolean;
@@ -80,6 +84,17 @@ export class AuthService extends BaseService {
     if (!user || !user.password || !isAuthenticated) {
       this.logger.warn(`Failed login attempt for user ${dto.email} from ip address ${details.clientIp}`);
       throw new UnauthorizedException('Incorrect email or password');
+    }
+
+    if (user.mfaEnabled && user.mfaSecret) {
+      if (!dto.mfaCode) {
+        throw new UnauthorizedException('MFA code required');
+      }
+
+      if (!verifyTotp(user.mfaSecret, dto.mfaCode)) {
+        this.logger.warn(`Failed MFA attempt for user ${dto.email} from ip address ${details.clientIp}`);
+        throw new UnauthorizedException('Incorrect MFA code');
+      }
     }
 
     return this.createLoginResponse(user, details);
@@ -207,6 +222,56 @@ export class AuthService extends BaseService {
     } else {
       throw new BadRequestException('Either password or pinCode is required');
     }
+  }
+
+  async setupMfa(auth: AuthDto): Promise<MfaSetupResponseDto> {
+    const user = await this.userRepository.getForPinCode(auth.user.id);
+    if (user.mfaEnabled) {
+      throw new BadRequestException('MFA is already enabled');
+    }
+
+    const secret = generateTotpSecret();
+    await this.userRepository.update(auth.user.id, { mfaSecret: secret });
+
+    return { secret, otpauthUri: getTotpUri({ secret, issuer: 'Immich', account: auth.user.email }) };
+  }
+
+  async enableMfa(auth: AuthDto, dto: MfaEnableDto) {
+    const user = await this.userRepository.getForPinCode(auth.user.id);
+    if (user.mfaEnabled) {
+      throw new BadRequestException('MFA is already enabled');
+    }
+
+    if (!user.mfaSecret) {
+      throw new BadRequestException('MFA setup has not been started');
+    }
+
+    if (!verifyTotp(user.mfaSecret, dto.code)) {
+      throw new BadRequestException('Wrong MFA code');
+    }
+
+    await this.userRepository.update(auth.user.id, { mfaEnabled: true });
+  }
+
+  async disableMfa(auth: AuthDto, dto: MfaDisableDto) {
+    const user = await this.userRepository.getForPinCode(auth.user.id);
+    if (!user.mfaEnabled || !user.mfaSecret) {
+      throw new BadRequestException('MFA is not enabled');
+    }
+
+    if (dto.code) {
+      if (!verifyTotp(user.mfaSecret, dto.code)) {
+        throw new BadRequestException('Wrong MFA code');
+      }
+    } else if (dto.password) {
+      if (!this.validateSecret(dto.password, user.password)) {
+        throw new BadRequestException('Wrong password');
+      }
+    } else {
+      throw new BadRequestException('Either code or password is required');
+    }
+
+    await this.userRepository.update(auth.user.id, { mfaEnabled: false, mfaSecret: null });
   }
 
   async adminSignUp(dto: SignUpDto): Promise<UserAdminResponseDto> {
@@ -748,6 +813,7 @@ export class AuthService extends BaseService {
     return {
       pinCode: !!user.pinCode,
       password: !!user.password,
+      mfa: user.mfaEnabled,
       isElevated: !!auth.session?.hasElevatedPermission,
       expiresAt: session?.expiresAt?.toISOString(),
       pinExpiresAt: session?.pinExpiresAt?.toISOString(),

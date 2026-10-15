@@ -103,7 +103,9 @@ where
 -- UserRepository.getForPinCode
 select
   "user"."pinCode",
-  "user"."password"
+  "user"."password",
+  "user"."mfaSecret",
+  "user"."mfaEnabled"
 from
   "user"
 where
