@@ -34,6 +34,7 @@ const AlbumUserCreateSchema = z
 const CreateAlbumSchema = z
   .object({
     albumName: z.string().describe('Album name'),
+    isLocked: z.boolean().optional().describe('Hide assets outside of locked albums and require a PIN'),
     // TODO: drop the empty-string-to-null transform in v4 (clients should send null)
     description: z
       .string()
@@ -90,6 +91,7 @@ const UpdateAlbumSchema = z
       }),
     albumThumbnailAssetId: z.uuidv4().optional().describe('Album thumbnail asset ID'),
     isActivityEnabled: z.boolean().optional().describe('Enable activity feed'),
+    isLocked: z.boolean().optional().describe('Hide assets outside of locked albums and require a PIN'),
     order: AssetOrderSchema.optional(),
   })
   .meta({ id: 'UpdateAlbumDto' });
@@ -185,6 +187,7 @@ export const AlbumResponseSchema = z
       .optional()
       .describe('UTC representation of (local) end date (latest asset)'),
     isActivityEnabled: z.boolean().describe('Activity feed enabled'),
+    isLocked: z.boolean().describe('Locked album, content needs an elevated (PIN) session'),
     order: AssetOrderSchema.optional(),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
   })
@@ -226,6 +229,7 @@ export type MapAlbumDto = {
   updatedAt: Date;
   id: string;
   isActivityEnabled: boolean;
+  isLocked: boolean;
   order: AssetOrder;
 };
 
@@ -269,6 +273,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     endDate: asDateTimeString(endDate),
     assetCount: entity.assets?.length || 0,
     isActivityEnabled: entity.isActivityEnabled,
+    isLocked: entity.isLocked,
     order: entity.order,
   };
 };

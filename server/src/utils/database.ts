@@ -107,6 +107,23 @@ export const isAssetChecksumConstraint = (error: unknown) =>
 export const isVideoStreamSessionPkConstraint = (error: unknown) =>
   (error as PostgresError)?.constraint_name === VIDEO_STREAM_SESSION_PK_CONSTRAINT;
 
+// Asset sits in a locked album that the user owns or is a member of.
+export const inLockedAlbumOf = (eb: ExpressionBuilder<DB, 'asset'>, userId: string) =>
+  eb.exists(
+    eb
+      .selectFrom('album_asset as locked_album_asset')
+      .innerJoin('album as locked_album', (join) =>
+        join
+          .onRef('locked_album.id', '=', 'locked_album_asset.albumId')
+          .on('locked_album.isLocked', '=', true)
+          .on('locked_album.deletedAt', 'is', null),
+      )
+      .innerJoin('album_user as locked_album_user', 'locked_album_user.albumId', 'locked_album.id')
+      .select('locked_album_asset.assetId')
+      .whereRef('locked_album_asset.assetId', '=', 'asset.id')
+      .where('locked_album_user.userId', '=', userId),
+  );
+
 export function withDefaultVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>) {
   return qb.where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]);
 }
@@ -487,6 +504,7 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
     .$if(!!options.id, (qb) => qb.where('asset.id', '=', asUuid(options.id!)))
     .$if(!!options.libraryId, (qb) => qb.where('asset.libraryId', '=', asUuid(options.libraryId!)))
     .$if(!!options.userIds, (qb) => qb.where('asset.ownerId', '=', anyUuid(options.userIds!)))
+    .$if(!!options.userIds?.length, (qb) => qb.where((eb) => eb.not(inLockedAlbumOf(eb, options.userIds![0]))))
     .$if(!!options.encodedVideoPath, (qb) =>
       qb
         .innerJoin('asset_file', (join) =>
@@ -814,6 +832,7 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .where((eb) =>
         eb.or([eb('asset.visibility', '!=', AssetVisibility.Locked), eb('asset.ownerId', '=', scope.lockedOwnerId)]),
       )
+      .where((eb) => eb.not(inLockedAlbumOf(eb, scope.lockedOwnerId)))
       .$if(!!(options.withFaces || options.withPeople), (qb) =>
         qb.select(withFacesAndPeople({ viewingUserId: scope.viewingUserId! })),
       )

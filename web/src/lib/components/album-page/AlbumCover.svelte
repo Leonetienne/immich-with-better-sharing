@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LockedAlbumCover from '$lib/components/album-page/LockedAlbumCover.svelte';
   import AssetCover from '$lib/components/sharedlinks-page/covers/AssetCover.svelte';
   import NoCover from '$lib/components/sharedlinks-page/covers/NoCover.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -19,7 +20,9 @@
   );
 </script>
 
-{#if thumbnailUrl}
+{#if album.isLocked && !album.albumName}
+  <LockedAlbumCover class={className} />
+{:else if thumbnailUrl}
   <AssetCover {alt} class={className} src={thumbnailUrl} {preload} />
 {:else}
   <NoCover {alt} class={className} {preload} />

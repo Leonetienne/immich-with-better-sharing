@@ -25,7 +25,12 @@
 <UserPageLayout title={data.meta.title} use={[[scrollMemory, { routeStartsWith: Route.albums() }]]}>
   {#snippet buttons()}
     <div class="flex place-items-center gap-2">
-      <AlbumsControls {albumGroups} bind:searchQuery />
+      <AlbumsControls
+        {albumGroups}
+        bind:searchQuery
+        isElevated={data.isElevated}
+        hasLockedAlbums={[...data.albums, ...data.sharedAlbums].some(({ isLocked }) => isLocked)}
+      />
     </div>
   {/snippet}
 

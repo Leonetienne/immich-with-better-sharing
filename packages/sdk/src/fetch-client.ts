@@ -878,6 +878,8 @@ export type AlbumResponseDto = {
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
+    /** Locked album, content needs an elevated (PIN) session */
+    isLocked: boolean;
     /** Last modified asset timestamp */
     lastModifiedAssetTimestamp?: string;
     order?: AssetOrder;
@@ -902,6 +904,8 @@ export type CreateAlbumDto = {
     assetIds?: string[];
     /** Album description */
     description?: string | null;
+    /** Hide assets outside of locked albums and require a PIN */
+    isLocked?: boolean;
 };
 export type AlbumsAddAssetsDto = {
     /** Album IDs */
@@ -931,6 +935,8 @@ export type UpdateAlbumDto = {
     description?: string | null;
     /** Enable activity feed */
     isActivityEnabled?: boolean;
+    /** Hide assets outside of locked albums and require a PIN */
+    isLocked?: boolean;
     order?: AssetOrder;
 };
 export type BulkIdsDto = {

@@ -6,6 +6,7 @@ import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MemoryType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { inLockedAlbumOf } from 'src/utils/database.js';
 
 export type SyncBackfillOptions = {
   nowId: string;
@@ -152,6 +153,9 @@ class AlbumSync extends BaseSync {
       .selectFrom('album_user')
       .select(['albumId as id', 'createId'])
       .where('userId', '=', userId)
+      .where('albumId', 'not in', (eb) =>
+        eb.selectFrom('album as locked_album').select('locked_album.id').where('locked_album.isLocked', '=', true),
+      )
       .$if(!!afterCreateId, (qb) => qb.where('createId', '>=', afterCreateId!))
       .where('createId', '<', nowId)
       .orderBy('createId', 'asc')
@@ -177,6 +181,7 @@ class AlbumSync extends BaseSync {
       .distinctOn(['album.id', 'album.updateId'])
       .leftJoin('album_user as album_users', 'album.id', 'album_users.albumId')
       .where('album_users.userId', '=', userId)
+      .where('album.isLocked', '=', false)
       .select([
         'album.id',
         'album.albumName as name',
@@ -236,6 +241,9 @@ class AlbumAssetSync extends BaseSync {
       .where('album_asset.updateId', '<=', albumToAssetAck.updateId) // Ensure we only send updates for assets that the client already knows about
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
+      .where('album_asset.albumId', 'not in', (eb) =>
+        eb.selectFrom('album as locked_album').select('locked_album.id').where('locked_album.isLocked', '=', true),
+      )
       .stream();
   }
 
@@ -257,6 +265,9 @@ class AlbumAssetSync extends BaseSync {
       )
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
+      .where('album_asset.albumId', 'not in', (eb) =>
+        eb.selectFrom('album as locked_album').select('locked_album.id').where('locked_album.isLocked', '=', true),
+      )
       .stream();
   }
 }
@@ -282,6 +293,9 @@ class AlbumAssetExifSync extends BaseSync {
       .where('album_asset.updateId', '<=', albumToAssetAck.updateId) // Ensure we only send exif updates for assets that the client already knows about
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
+      .where('album_asset.albumId', 'not in', (eb) =>
+        eb.selectFrom('album as locked_album').select('locked_album.id').where('locked_album.isLocked', '=', true),
+      )
       .stream();
   }
 
@@ -295,6 +309,7 @@ class AlbumAssetExifSync extends BaseSync {
       .innerJoin('album', 'album.id', 'album_asset.albumId')
       .leftJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
+      .where('album.isLocked', '=', false)
       .stream();
   }
 }
@@ -334,6 +349,9 @@ class AlbumToAssetSync extends BaseSync {
       .select(['album_asset.assetId as assetId', 'album_asset.albumId as albumId', 'album_asset.updateId'])
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
+      .where('album_asset.albumId', 'not in', (eb) =>
+        eb.selectFrom('album as locked_album').select('locked_album.id').where('locked_album.isLocked', '=', true),
+      )
       .stream();
   }
 }
@@ -382,6 +400,9 @@ class AlbumUserSync extends BaseSync {
             .select(['albumUsers.albumId as id'])
             .where('albumUsers.userId', '=', userId),
         ),
+      )
+      .where('album_user.albumId', 'not in', (eb) =>
+        eb.selectFrom('album as locked_album').select('locked_album.id').where('locked_album.isLocked', '=', true),
       )
       .stream();
   }
@@ -688,6 +709,7 @@ class PartnerAssetsSync extends BaseSync {
       .where('ownerId', 'in', (eb) =>
         eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
       )
+      .where((eb) => eb.not(inLockedAlbumOf(eb, options.userId)))
       .stream();
   }
 }

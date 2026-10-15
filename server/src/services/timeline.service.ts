@@ -44,7 +44,13 @@ export class TimelineService extends BaseService {
       }
     }
 
-    return { ...options, userIds };
+    const album =
+      options.albumId && auth.session?.hasElevatedPermission
+        ? await this.albumRepository.getById(options.albumId)
+        : undefined;
+    const isLockedAlbum = !!album?.isLocked;
+
+    return { ...options, userIds, ...(isLockedAlbum && { isLockedAlbum }) };
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {

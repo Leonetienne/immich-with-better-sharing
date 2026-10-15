@@ -19787,6 +19787,10 @@
             "description": "Activity feed enabled",
             "type": "boolean"
           },
+          "isLocked": {
+            "description": "Locked album, content needs an elevated (PIN) session",
+            "type": "boolean"
+          },
           "lastModifiedAssetTimestamp": {
             "description": "Last modified asset timestamp",
             "format": "date-time",
@@ -19820,6 +19824,7 @@
           "hasSharedLink",
           "id",
           "isActivityEnabled",
+          "isLocked",
           "shared",
           "updatedAt"
         ],
@@ -21807,6 +21812,10 @@
                 "description": "Sending an empty string is deprecated; send null instead. Empty strings will no longer be coerced to null in v4."
               }
             ]
+          },
+          "isLocked": {
+            "description": "Hide assets outside of locked albums and require a PIN",
+            "type": "boolean"
           }
         },
         "required": [
@@ -32620,6 +32629,10 @@
           },
           "isActivityEnabled": {
             "description": "Enable activity feed",
+            "type": "boolean"
+          },
+          "isLocked": {
+            "description": "Hide assets outside of locked albums and require a PIN",
             "type": "boolean"
           },
           "order": {

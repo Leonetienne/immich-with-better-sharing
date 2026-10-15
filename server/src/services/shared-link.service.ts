@@ -75,6 +75,10 @@ export class SharedLinkService extends BaseService {
           throw new BadRequestException('Invalid albumId');
         }
         await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [dto.albumId] });
+        const album = await this.albumRepository.getById(dto.albumId);
+        if (album?.isLocked) {
+          throw new BadRequestException('Locked albums cannot be shared by link');
+        }
         break;
       }
 
@@ -84,6 +88,10 @@ export class SharedLinkService extends BaseService {
         }
 
         await this.requireAccess({ auth, permission: Permission.AssetShare, ids: dto.assetIds });
+        const lockedAssetIds = await this.albumRepository.getLockedAssetIds(auth.user.id, dto.assetIds);
+        if (lockedAssetIds.size > 0) {
+          throw new BadRequestException('Assets in locked albums cannot be shared by link');
+        }
 
         break;
       }
@@ -157,11 +165,14 @@ export class SharedLinkService extends BaseService {
 
     const existingAssetIds = new Set(sharedLink.assets.map((asset) => asset.id));
     const notPresentAssetIds = dto.assetIds.filter((assetId) => !existingAssetIds.has(assetId));
-    const allowedAssetIds = await this.checkAccess({
+    const shareableAssetIds = await this.checkAccess({
       auth,
       permission: Permission.AssetShare,
       ids: notPresentAssetIds,
     });
+    const allowedAssetIds = shareableAssetIds.difference(
+      await this.albumRepository.getLockedAssetIds(auth.user.id, [...shareableAssetIds]),
+    );
 
     const results: AssetIdsResponseDto[] = [];
     for (const assetId of dto.assetIds) {

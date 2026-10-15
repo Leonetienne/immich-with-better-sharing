@@ -23,6 +23,10 @@
     groupOptionsMetadata,
     sortOptionsMetadata,
   } from '$lib/utils/album-utils';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { Route } from '$lib/route';
+  import { handleLockSession } from '$lib/services/user.service';
+  import { createAlbum } from '@immich/sdk';
   import { Button, IconButton, Text } from '@immich/ui';
   import {
     mdiArrowDownThin,
@@ -31,6 +35,9 @@
     mdiFolderArrowUpOutline,
     mdiFolderRemoveOutline,
     mdiFormatListBulletedSquare,
+    mdiLockOpenVariantOutline,
+    mdiLockOutline,
+    mdiLockPlusOutline,
     mdiPlusBoxOutline,
     mdiUnfoldLessHorizontal,
     mdiUnfoldMoreHorizontal,
@@ -42,9 +49,23 @@
   interface Props {
     albumGroups: string[];
     searchQuery: string;
+    isElevated?: boolean;
+    hasLockedAlbums?: boolean;
   }
 
-  let { albumGroups, searchQuery = $bindable() }: Props = $props();
+  let { albumGroups, searchQuery = $bindable(), isElevated = false, hasLockedAlbums = false }: Props = $props();
+
+  const handleUnlock = () => goto(Route.pinPrompt({ continue: Route.albums() }));
+
+  const handleLock = async () => {
+    await handleLockSession();
+    await invalidateAll();
+  };
+
+  const handleCreateLocked = async () => {
+    const album = await createAlbum({ createAlbumDto: { albumName: '', isLocked: true } });
+    await goto(Route.viewAlbum(album));
+  };
 
   const flipOrdering = (ordering: string) => {
     return ordering === SortOrder.Asc ? SortOrder.Desc : SortOrder.Asc;
@@ -137,6 +158,25 @@
 >
   <p class="hidden md:block">{$t('create_album')}</p>
 </Button>
+
+{#if isElevated}
+  <Button leadingIcon={mdiLockPlusOutline} onclick={handleCreateLocked} size="small" variant="ghost" color="secondary">
+    <p class="hidden md:block">{$t('create_locked_album')}</p>
+  </Button>
+  <Button leadingIcon={mdiLockOutline} onclick={handleLock} size="small" variant="ghost" color="secondary">
+    <p class="hidden md:block">{$t('lock_albums')}</p>
+  </Button>
+{:else}
+  <Button
+    leadingIcon={hasLockedAlbums ? mdiLockOpenVariantOutline : mdiLockPlusOutline}
+    onclick={handleUnlock}
+    size="small"
+    variant="ghost"
+    color="secondary"
+  >
+    <p class="hidden md:block">{hasLockedAlbums ? $t('unlock_albums') : $t('create_locked_album')}</p>
+  </Button>
+{/if}
 
 <!-- Sort Albums -->
 <Dropdown

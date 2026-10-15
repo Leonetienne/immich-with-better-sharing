@@ -35,5 +35,6 @@ eventManager.on({
   AlbumCreate: () => resetRecentAlbums(),
   AlbumUpdate: () => resetRecentAlbums(),
   AlbumDelete: () => resetRecentAlbums(),
+  SessionLocked: () => resetRecentAlbums(),
   AuthLogout: () => reset(),
 });

@@ -23,7 +23,7 @@ export const getUserActions = ($t: MessageFormatter) => {
   return { LockSession };
 };
 
-const handleLockSession = async () => {
+export const handleLockSession = async () => {
   const $t = await getFormatter();
 
   try {

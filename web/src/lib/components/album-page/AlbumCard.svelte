@@ -3,7 +3,8 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getShortDateRange } from '$lib/utils/date-time';
   import { type AlbumResponseDto } from '@immich/sdk';
-  import { ContextMenuButton, type MenuItems } from '@immich/ui';
+  import { ContextMenuButton, Icon, type MenuItems } from '@immich/ui';
+  import { mdiLockOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -53,7 +54,14 @@
       data-testid="album-name"
       title={album.albumName}
     >
-      {album.albumName}
+      {#if album.isLocked}
+        <Icon icon={mdiLockOutline} size="18" class="inline align-text-top" />
+      {/if}
+      {#if album.isLocked && !album.albumName}
+        <span class="blur-xs select-none" aria-label={$t('locked_album')}>{$t('locked_album')}</span>
+      {:else}
+        {album.albumName}
+      {/if}
     </p>
 
     {#if showDateRange && album.startDate && album.endDate}
