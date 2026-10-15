@@ -43,6 +43,7 @@
   let { asset, currentAlbum = null }: Props = $props();
 
   let isOwner = $derived(authManager.authenticated && authManager.user.id === asset.ownerId);
+  let canEdit = $derived(authManager.canEdit(asset.ownerId));
   let latlng = $derived(
     (() => {
       const lat = asset.exifInfo?.latitude;
@@ -150,9 +151,9 @@
       </section>
     {/if}
 
-    <DetailPanelDescription {asset} {isOwner} />
-    <DetailPanelRating {asset} {isOwner} />
-    <DetailPanelPeople {asset} {isOwner} {previousRoute} />
+    <DetailPanelDescription {asset} isOwner={canEdit} />
+    <DetailPanelRating {asset} isOwner={canEdit} />
+    <DetailPanelPeople {asset} isOwner={canEdit} {previousRoute} />
 
     <div class="p-4">
       {#if asset.exifInfo}
@@ -274,7 +275,7 @@
         </div>
       {/if}
 
-      <DetailPanelLocation {isOwner} {asset} />
+      <DetailPanelLocation isOwner={canEdit} {asset} />
     </div>
   </section>
 
@@ -377,7 +378,7 @@
 
   {#if authManager.authenticated && authManager.preferences.tags.enabled}
     <section class="relative px-2 pb-12 dark:bg-immich-dark-bg dark:text-immich-dark-fg">
-      <DetailPanelTags {asset} {isOwner} />
+      <DetailPanelTags {asset} isOwner={canEdit} />
     </section>
   {/if}
 {/if}

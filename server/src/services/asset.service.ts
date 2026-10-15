@@ -69,7 +69,13 @@ export class AssetService extends BaseService {
 
   // Owners favorite via asset.isFavorite, partners via asset_user_favorite.
   private async requireFavoriteAccess(auth: AuthDto, ids: string[]) {
-    const owned = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids });
+    const owned = auth.sharedLink
+      ? new Set<string>()
+      : await this.accessRepository.asset.checkOwnerAccess(
+          auth.user.id,
+          new Set(ids),
+          auth.session?.hasElevatedPermission,
+        );
     const rest = new Set(ids).difference(owned);
     const partner = auth.sharedLink
       ? new Set<string>()
@@ -118,11 +124,23 @@ export class AssetService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
-    if (dto.isFavorite !== undefined && isFavoriteOnly(dto)) {
+    let ownerId = auth.user.id;
+    if (!auth.sharedLink) {
       const { partner } = await this.requireFavoriteAccess(auth, [id]);
       if (partner.length > 0) {
-        await this.assetRepository.setUserFavorite(auth.user.id, partner, dto.isFavorite);
-        return this.get(auth, id) as Promise<AssetResponseDto>;
+        const { isFavorite, ...changes } = dto;
+        if (isFavorite !== undefined) {
+          await this.assetRepository.setUserFavorite(auth.user.id, partner, isFavorite);
+        }
+        if (isFavoriteOnly(changes)) {
+          return this.get(auth, id) as Promise<AssetResponseDto>;
+        }
+        if (changes.visibility !== undefined) {
+          throw new BadRequestException('Only the owner can change visibility');
+        }
+        dto = changes;
+        const asset = await this.findOrFail(id);
+        ownerId = asset.ownerId;
       }
     }
 
@@ -133,7 +151,7 @@ export class AssetService extends BaseService {
 
     let previousMotion: { id: string } | null = null;
     if (rest.livePhotoVideoId) {
-      await onBeforeLink(repos, { userId: auth.user.id, livePhotoVideoId: rest.livePhotoVideoId });
+      await onBeforeLink(repos, { userId: ownerId, livePhotoVideoId: rest.livePhotoVideoId });
     } else if (rest.livePhotoVideoId === null) {
       const asset = await this.findOrFail(id);
       if (asset.livePhotoVideoId) {
@@ -147,7 +165,7 @@ export class AssetService extends BaseService {
 
     if (previousMotion && asset) {
       await onAfterUnlink(repos, {
-        userId: auth.user.id,
+        userId: ownerId,
         livePhotoVideoId: previousMotion.id,
         visibility: asset.visibility,
       });
@@ -179,22 +197,38 @@ export class AssetService extends BaseService {
       timeZone,
     } = dto;
 
-    if (isFavorite !== undefined && isFavoriteOnly(omitBy(dto, (_, key) => key === 'ids'))) {
+    const hasChanges = !isFavoriteOnly(omitBy(dto, (_, key) => key === 'ids'));
+    if (hasChanges || isFavorite === undefined) {
+      await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
+    }
+
+    if (visibility !== undefined || duplicateId !== undefined) {
+      const owned = await this.accessRepository.asset.checkOwnerAccess(
+        auth.user.id,
+        new Set(ids),
+        auth.session?.hasElevatedPermission,
+      );
+      if (owned.size !== new Set(ids).size) {
+        throw new BadRequestException('Only the owner can change visibility or duplicates');
+      }
+    }
+
+    if (isFavorite !== undefined) {
       const { owned, partner } = await this.requireFavoriteAccess(auth, ids);
       await this.assetRepository.updateAll(owned, { isFavorite });
       await this.assetRepository.setUserFavorite(auth.user.id, partner, isFavorite);
-      const assets = await this.assetRepository.getByIds(ids);
-      for (const asset of assets) {
-        const mapped = mapAsset(asset, { auth });
-        mapped.isFavorite = isFavorite;
-        this.websocketRepository.clientSend('on_asset_update', auth.user.id, mapped);
+      if (!hasChanges) {
+        const assets = await this.assetRepository.getByIds(ids);
+        for (const asset of assets) {
+          const mapped = mapAsset(asset, { auth });
+          mapped.isFavorite = isFavorite;
+          this.websocketRepository.clientSend('on_asset_update', auth.user.id, mapped);
+        }
+        return;
       }
-      return;
     }
 
-    await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
-
-    const assetDto = omitBy({ isFavorite, visibility, duplicateId }, isUndefined);
+    const assetDto = omitBy({ visibility, duplicateId }, isUndefined);
     const exifDto = omitBy(
       {
         latitude,

@@ -24834,6 +24834,10 @@
       "PartnerResponseDto": {
         "description": "Partner response",
         "properties": {
+          "allowEdits": {
+            "description": "Partner may edit the assets shared by sharedBy",
+            "type": "boolean"
+          },
           "avatarColor": {
             "$ref": "#/components/schemas/UserAvatarColor"
           },
@@ -24879,14 +24883,15 @@
       },
       "PartnerUpdateDto": {
         "properties": {
+          "allowEdits": {
+            "description": "Allow the partner to edit and stack your assets (path ID is the partner you share with)",
+            "type": "boolean"
+          },
           "inTimeline": {
-            "description": "Show partner assets in timeline",
+            "description": "Show partner assets in timeline (path ID is the sharing user)",
             "type": "boolean"
           }
         },
-        "required": [
-          "inTimeline"
-        ],
         "type": "object"
       },
       "PeopleDeleteDto": {

@@ -59,6 +59,7 @@ describe(StackService.name, () => {
         .build();
 
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([primaryAsset.id, asset.id]));
+      mocks.asset.getByIds.mockResolvedValue([primaryAsset, asset] as any);
       mocks.stack.create.mockResolvedValue(getForStack(stack));
 
       await expect(sut.create(auth, { assetIds: [primaryAsset.id, asset.id] })).resolves.toEqual({
@@ -72,6 +73,50 @@ describe(StackService.name, () => {
         userId: auth.user.id,
       });
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalled();
+    });
+
+    it('should let an editing partner stack assets of different owners', async () => {
+      const auth = AuthFactory.create();
+      const partnerAsset = AssetFactory.from().exif().build();
+      const ownAsset = AssetFactory.from({ ownerId: auth.user.id }).exif().build();
+      const stack = StackFactory.from()
+        .primaryAsset(partnerAsset, (builder) => builder.exif())
+        .asset(ownAsset, (builder) => builder.exif())
+        .build();
+
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([ownAsset.id]));
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([partnerAsset.id]));
+      mocks.asset.getByIds.mockResolvedValue([partnerAsset, ownAsset] as any);
+      mocks.stack.create.mockResolvedValue(getForStack(stack));
+
+      await sut.create(auth, { assetIds: [partnerAsset.id, ownAsset.id] });
+
+      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(
+        auth.user.id,
+        new Set([partnerAsset.id]),
+        true,
+      );
+      expect(mocks.stack.create).toHaveBeenCalledWith({ ownerId: partnerAsset.ownerId }, [
+        partnerAsset.id,
+        ownAsset.id,
+      ]);
+    });
+
+    it('should reject mixed owners without edit permission', async () => {
+      const auth = AuthFactory.create();
+      const partnerAsset = AssetFactory.from().exif().build();
+      const ownAsset = AssetFactory.from({ ownerId: auth.user.id }).exif().build();
+
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([ownAsset.id]));
+      mocks.access.asset.checkPartnerAccess.mockImplementation((_, ids, requireAllowEdits) =>
+        Promise.resolve(requireAllowEdits ? new Set() : new Set([...ids].filter((id) => id === partnerAsset.id))),
+      );
+      mocks.asset.getByIds.mockResolvedValue([partnerAsset, ownAsset] as any);
+
+      await expect(sut.create(auth, { assetIds: [partnerAsset.id, ownAsset.id] })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.stack.create).not.toHaveBeenCalled();
     });
   });
 
@@ -102,6 +147,7 @@ describe(StackService.name, () => {
         .build();
 
       mocks.access.stack.checkOwnerAccess.mockResolvedValue(new Set([stack.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([primaryAsset.id, asset.id]));
       mocks.stack.getById.mockResolvedValue(getForStack(stack));
 
       await expect(sut.get(auth, stack.id)).resolves.toEqual({

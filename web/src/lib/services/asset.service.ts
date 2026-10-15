@@ -63,10 +63,11 @@ import { getFormatter } from '$lib/utils/i18n';
 export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseDto) => {
   const assetIds = assetMultiSelectManager.assets.map((asset) => asset.id);
   const ownedAssets = assetMultiSelectManager.ownedAssets;
+  const editableAssets = assetMultiSelectManager.editableAssets;
   const isAlbumOwner = album?.albumUsers[0].user.id === authManager.user.id;
 
   const onAction = async (name: AssetJobName) => {
-    await handleRunAssetJob({ name, assetIds: ownedAssets.map(({ id }) => id) });
+    await handleRunAssetJob({ name, assetIds: editableAssets.map(({ id }) => id) });
     assetMultiSelectManager.clear();
   };
 
@@ -94,7 +95,7 @@ export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseD
   const Tag: ActionItem = {
     title: $t('tag'),
     icon: mdiTagMultipleOutline,
-    $if: () => authManager.preferences.tags.enabled && assetMultiSelectManager.isAllUserOwned,
+    $if: () => authManager.preferences.tags.enabled && assetMultiSelectManager.isAllEditable,
     onAction: async () => {
       if (await modalManager.show(AssetTagModal, { assetIds })) {
         assetMultiSelectManager.clear();
@@ -125,7 +126,7 @@ export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseD
     title: $t('refresh_encoded_videos'),
     icon: mdiCogRefreshOutline,
     onAction: () => onAction(AssetJobName.TranscodeVideo),
-    $if: () => ownedAssets.every((asset) => asset.isVideo),
+    $if: () => editableAssets.every((asset) => asset.isVideo),
   };
 
   return {
@@ -148,6 +149,7 @@ export const getAssetActions = (
   const sharedLink = getSharedLink();
   const authUser = authManager.authenticated ? authManager.user : undefined;
   const isOwner = !!(authUser && authUser.id === asset.ownerId);
+  const canEdit = authManager.canEdit(asset.ownerId);
   const isAlbumOwner = !!(authUser && authUser.id === album?.albumUsers[0].user.id);
   const smartSearchEnabled = featureFlagsManager.value.smartSearch;
 
@@ -222,7 +224,7 @@ export const getAssetActions = (
   const Rate: ActionItem = {
     title: $t('rate_asset'),
     description: $t('rate_asset_description'),
-    $if: () => isOwner && authManager.preferences.ratings.enabled,
+    $if: () => canEdit && authManager.preferences.ratings.enabled,
     onAction: ({ event }) => handleRate(asset, event instanceof KeyboardEvent ? Number(event.key) : NaN),
     shortcuts: [0, 1, 2, 3, 4, 5].map((key) => ({ key: String(key) })),
   };
@@ -291,7 +293,7 @@ export const getAssetActions = (
   const TagPeople: ActionItem = {
     title: $t('tag_people'),
     icon: mdiFaceRecognition,
-    $if: () => isOwner && asset.type === AssetTypeEnum.Image && !asset.isTrashed,
+    $if: () => canEdit && asset.type === AssetTypeEnum.Image && !asset.isTrashed,
     onAction: () => assetViewerManager.toggleFaceEditMode(),
     shortcuts: { key: 'p' },
   };
@@ -301,7 +303,7 @@ export const getAssetActions = (
     icon: mdiTune,
     $if: () =>
       !sharedLink &&
-      isOwner &&
+      canEdit &&
       asset.type === AssetTypeEnum.Image &&
       !asset.livePhotoVideoId &&
       asset.exifInfo?.projectionType !== ProjectionType.EQUIRECTANGULAR &&

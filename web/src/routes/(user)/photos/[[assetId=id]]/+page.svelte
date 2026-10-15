@@ -169,6 +169,16 @@
         <DownloadAction menuItem />
         <ActionMenuItem action={StackActions.Stack} />
         <ActionMenuItem action={StackActions.Unstack} />
+        {#if assetMultiSelectManager.isAllEditable}
+          <ChangeDate menuItem />
+          <ChangeDescription menuItem />
+          <ChangeLocation menuItem />
+          <ActionMenuItem action={Actions.Tag} />
+          <hr />
+          <ActionMenuItem action={Actions.RegenerateThumbnailJob} />
+          <ActionMenuItem action={Actions.RefreshMetadataJob} />
+          <ActionMenuItem action={Actions.TranscodeVideoJob} />
+        {/if}
       </ButtonContextMenu>
     {:else}
       <DownloadAction />

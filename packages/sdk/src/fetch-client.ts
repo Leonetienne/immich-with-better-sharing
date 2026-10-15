@@ -1972,6 +1972,8 @@ export type OAuthCallbackDto = {
     url: string;
 };
 export type PartnerResponseDto = {
+    /** Partner may edit the assets shared by sharedBy */
+    allowEdits?: boolean;
     avatarColor: UserAvatarColor;
     /** User email */
     email: string;
@@ -1991,8 +1993,10 @@ export type PartnerCreateDto = {
     sharedWithId: string;
 };
 export type PartnerUpdateDto = {
-    /** Show partner assets in timeline */
-    inTimeline: boolean;
+    /** Allow the partner to edit and stack your assets (path ID is the partner you share with) */
+    allowEdits?: boolean;
+    /** Show partner assets in timeline (path ID is the sharing user) */
+    inTimeline?: boolean;
 };
 export type PeopleDeleteDto = {
     /** IDs to process */

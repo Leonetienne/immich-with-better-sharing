@@ -58,6 +58,32 @@ import { globToPostgresRegex } from 'src/utils/misc.js';
 
 export type AssetStats = Record<AssetType, number>;
 
+// A stack member stays visible unless another member visible to the same timeline takes precedence,
+// which is the primary asset first and then the lowest id. Mixed-owner stacks rely on this.
+const withStackRepresentative = <O>(qb: SelectQueryBuilder<DB, 'asset', O>, userIds?: string[]) =>
+  qb.where((eb) =>
+    eb.or([
+      eb('asset.stackId', 'is', null),
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom('asset as other')
+            .innerJoin('stack', 'stack.id', 'other.stackId')
+            .select('other.id')
+            .whereRef('other.stackId', '=', 'asset.stackId')
+            .whereRef('other.id', '!=', 'asset.id')
+            .whereRef('stack.primaryAssetId', '!=', 'asset.id')
+            .where('other.deletedAt', 'is', null)
+            .whereRef('other.visibility', '=', 'asset.visibility')
+            .$if(!!userIds, (qb) => qb.where('other.ownerId', '=', anyUuid(userIds!)))
+            .where((eb) =>
+              eb.or([eb('other.id', '=', eb.ref('stack.primaryAssetId')), eb('other.id', '<', eb.ref('asset.id'))]),
+            ),
+        ),
+      ),
+    ]),
+  );
+
 // Owner's favorite comes from asset.isFavorite, everyone else's from asset_user_favorite.
 const isFavoriteFor = (userId: string) =>
   sql<boolean>`case when asset."ownerId" = ${userId} then asset."isFavorite" else exists (select 1 from asset_user_favorite where asset_user_favorite."assetId" = asset.id and asset_user_favorite."userId" = ${userId}) end`;
@@ -819,13 +845,7 @@ export class AssetRepository {
               .where('album_asset.albumId', '=', asUuid(options.albumId!)),
           )
           .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
-          .$if(!!options.withStacked, (qb) =>
-            qb
-              .leftJoin('stack', (join) =>
-                join.onRef('stack.id', '=', 'asset.stackId').onRef('stack.primaryAssetId', '=', 'asset.id'),
-              )
-              .where((eb) => eb.or([eb('asset.stackId', 'is', null), eb(eb.table('stack'), 'is not', null)])),
-          )
+          .$if(!!options.withStacked, (qb) => withStackRepresentative(qb, options.userIds))
           .$if(!!options.userIds, (qb) =>
             qb.where((eb) => {
               // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
@@ -930,17 +950,7 @@ export class AssetRepository {
             qb.where(isFavoriteFor(auth.user.id), '=', options.isFavorite!),
           )
           .$if(!!options.withStacked, (qb) =>
-            qb
-              .where((eb) =>
-                eb.not(
-                  eb.exists(
-                    eb
-                      .selectFrom('stack')
-                      .whereRef('stack.id', '=', 'asset.stackId')
-                      .whereRef('stack.primaryAssetId', '!=', 'asset.id'),
-                  ),
-                ),
-              )
+            withStackRepresentative(qb, options.userIds)
               .leftJoinLateral(
                 (eb) =>
                   eb
@@ -949,6 +959,7 @@ export class AssetRepository {
                     .whereRef('stacked.stackId', '=', 'asset.stackId')
                     .where('stacked.deletedAt', 'is', null)
                     .where('stacked.visibility', '=', AssetVisibility.Timeline)
+                    .$if(!!options.userIds, (qb) => qb.where('stacked.ownerId', '=', anyUuid(options.userIds!)))
                     .groupBy('stacked.stackId')
                     .as('stacked_assets'),
                 (join) => join.onTrue(),

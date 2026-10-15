@@ -44,6 +44,10 @@ export class PartnerTable {
   @Column({ type: 'boolean', default: false })
   inTimeline!: Generated<boolean>;
 
+  // sharedWith may edit and stack sharedBy's assets
+  @Column({ type: 'boolean', default: false })
+  allowEdits!: Generated<boolean>;
+
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;
 }
