@@ -21,6 +21,8 @@ export class UserFactory {
       email: 'test@immich.cloud',
       password: '',
       pinCode: null,
+      mfaSecret: null,
+      mfaEnabled: false,
       createdAt: newDate(),
       profileImagePath: '',
       isAdmin: false,

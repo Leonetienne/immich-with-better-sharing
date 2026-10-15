@@ -1466,6 +1466,8 @@ export type ChangePasswordDto = {
 export type LoginCredentialDto = {
     /** User email */
     email: string;
+    /** TOTP code, required if MFA is enabled */
+    mfaCode?: string;
     /** User password */
     password: string;
 };
@@ -1492,6 +1494,22 @@ export type LogoutResponseDto = {
     redirectUri: string;
     /** Logout successful */
     successful: boolean;
+};
+export type MfaDisableDto = {
+    /** TOTP code */
+    code?: string;
+    /** User password (required if code is not provided) */
+    password?: string;
+};
+export type MfaEnableDto = {
+    /** TOTP code */
+    code: string;
+};
+export type MfaSetupResponseDto = {
+    /** otpauth URI for authenticator apps */
+    otpauthUri: string;
+    /** Base32 TOTP secret */
+    secret: string;
 };
 export type PinCodeResetDto = {
     /** User password (required if PIN code is not provided) */
@@ -1522,6 +1540,8 @@ export type AuthStatusResponseDto = {
     expiresAt?: string;
     /** Is elevated session */
     isElevated: boolean;
+    /** Has MFA enabled */
+    mfa: boolean;
     /** Has password set */
     password: boolean;
     /** Has PIN code set */
@@ -5204,6 +5224,42 @@ export function logout(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: LogoutResponseDto;
     }>("/auth/logout", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Disable MFA
+ */
+export function disableMfa({ mfaDisableDto }: {
+    mfaDisableDto: MfaDisableDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/auth/mfa", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: mfaDisableDto
+    })));
+}
+/**
+ * Enable MFA
+ */
+export function enableMfa({ mfaEnableDto }: {
+    mfaEnableDto: MfaEnableDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/auth/mfa/enable", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mfaEnableDto
+    })));
+}
+/**
+ * Start MFA setup
+ */
+export function setupMfa(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MfaSetupResponseDto;
+    }>("/auth/mfa/setup", {
         ...opts,
         method: "POST"
     }));

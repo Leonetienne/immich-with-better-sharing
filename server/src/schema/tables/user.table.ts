@@ -39,6 +39,12 @@ export class UserTable {
   @Column({ nullable: true })
   pinCode!: string | null;
 
+  @Column({ nullable: true })
+  mfaSecret!: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  mfaEnabled!: Generated<boolean>;
+
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
 

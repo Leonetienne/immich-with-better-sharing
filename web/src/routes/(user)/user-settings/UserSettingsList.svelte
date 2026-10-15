@@ -3,6 +3,7 @@
   import ChangePinCodeSettings from './PinCodeSettings.svelte';
   import DownloadSettings from './DownloadSettings.svelte';
   import FeatureSettings from './FeatureSettings.svelte';
+  import MfaSettings from './MfaSettings.svelte';
   import NotificationsSettings from './NotificationsSettings.svelte';
   import UserPurchaseSettings from './UserPurchaseSettings.svelte';
   import UserUsageStatistic from './UserUsageStatistic.svelte';
@@ -23,6 +24,7 @@
     mdiKeyOutline,
     mdiLockSmart,
     mdiServerOutline,
+    mdiShieldKeyOutline,
     mdiTwoFactorAuthentication,
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -127,6 +129,10 @@
   subtitle={$t('change_your_password')}
 >
   <ChangePasswordSettings />
+</SettingAccordion>
+
+<SettingAccordion icon={mdiShieldKeyOutline} key="mfa" title={$t('mfa')} subtitle={$t('mfa_description')}>
+  <MfaSettings />
 </SettingAccordion>
 
 <SettingAccordion

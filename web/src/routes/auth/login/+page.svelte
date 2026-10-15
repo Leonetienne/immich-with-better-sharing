@@ -7,8 +7,8 @@
   import { oauth } from '$lib/utils';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import { login, type LoginResponseDto } from '@immich/sdk';
-  import { Alert, Button, Field, Input, PasswordInput, Stack } from '@immich/ui';
-  import { onMount } from 'svelte';
+  import { Alert, Button, Field, Input, PasswordInput, PinInput, Stack } from '@immich/ui';
+  import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -21,6 +21,9 @@
   let errorMessage: string = $state('');
   let email = $state('');
   let password = $state('');
+  let mfaCode = $state('');
+  let isMfaRequired = $state(false);
+  let mfaField = $state<HTMLElement>();
   let oauthError = $state('');
   let loading = $state(false);
   let oauthLoading = $state(true);
@@ -77,11 +80,18 @@
     oauthLoading = false;
   });
 
+  const focusMfaField = async () => {
+    await tick();
+    mfaField?.querySelector('input')?.focus();
+  };
+
   const handleLogin = async () => {
     try {
       errorMessage = '';
       loading = true;
-      const user = await login({ loginCredentialDto: { email, password } });
+      const user = await login({
+        loginCredentialDto: { email, password, mfaCode: isMfaRequired ? mfaCode : undefined },
+      });
 
       if (user.isAdmin && !serverConfig.isOnboarded) {
         await onOnboarding();
@@ -104,8 +114,19 @@
       await onSuccess(user);
       return;
     } catch (error) {
-      errorMessage = getServerErrorMessage(error) || $t('errors.incorrect_email_or_password');
+      const message = getServerErrorMessage(error);
+      if (message === 'MFA code required') {
+        isMfaRequired = true;
+        loading = false;
+        await focusMfaField();
+        return;
+      }
+      mfaCode = '';
+      errorMessage = message || $t('errors.incorrect_email_or_password');
       loading = false;
+      if (isMfaRequired) {
+        await focusMfaField();
+      }
       return;
     }
   };
@@ -148,6 +169,14 @@
         <Field label={$t('password')} required="indicator">
           <PasswordInput id="password" bind:value={password} autocomplete="current-password" />
         </Field>
+
+        {#if isMfaRequired}
+          <Field label={$t('mfa_code')} required="indicator">
+            <div bind:this={mfaField}>
+              <PinInput bind:value={mfaCode} onComplete={() => handleLogin()} />
+            </div>
+          </Field>
+        {/if}
 
         <Button type="submit" size="large" shape="round" fullWidth {loading} class="mt-6">{$t('to_login')}</Button>
       </form>

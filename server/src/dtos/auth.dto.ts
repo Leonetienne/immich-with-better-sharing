@@ -11,6 +11,7 @@ export type CookieResponse = {
 };
 
 export const pinCodeRegex = /^\d{6}$/;
+export const mfaCodeRegex = /^\d{6}$/;
 
 export type AuthDto = {
   user: AuthUser;
@@ -23,6 +24,12 @@ const LoginCredentialSchema = z
   .object({
     email: toEmail.describe('User email').meta({ example: 'testuser@email.com' }),
     password: z.string().describe('User password').meta({ example: 'password' }),
+    mfaCode: z
+      .string()
+      .regex(mfaCodeRegex)
+      .optional()
+      .describe('TOTP code, required if MFA is enabled')
+      .meta({ example: '123456' }),
   })
   .meta({ id: 'LoginCredentialDto' });
 
@@ -63,9 +70,11 @@ const LogoutResponseSchema = z
   })
   .meta({ id: 'LogoutResponseDto' });
 
-const SignUpSchema = LoginCredentialSchema.extend({
-  name: z.string().describe('User name').meta({ example: 'Admin' }),
-}).meta({ id: 'SignUpDto' });
+const SignUpSchema = LoginCredentialSchema.omit({ mfaCode: true })
+  .extend({
+    name: z.string().describe('User name').meta({ example: 'Admin' }),
+  })
+  .meta({ id: 'SignUpDto' });
 
 const ChangePasswordSchema = z
   .object({
@@ -118,6 +127,26 @@ const OAuthConfigSchema = z
   })
   .meta({ id: 'OAuthConfigDto' });
 
+const MfaSetupResponseSchema = z
+  .object({
+    secret: z.string().describe('Base32 TOTP secret'),
+    otpauthUri: z.string().describe('otpauth URI for authenticator apps'),
+  })
+  .meta({ id: 'MfaSetupResponseDto' });
+
+const MfaEnableSchema = z
+  .object({
+    code: z.string().regex(mfaCodeRegex).describe('TOTP code').meta({ example: '123456' }),
+  })
+  .meta({ id: 'MfaEnableDto' });
+
+const MfaDisableSchema = z
+  .object({
+    code: z.string().regex(mfaCodeRegex).optional().describe('TOTP code').meta({ example: '123456' }),
+    password: z.string().optional().describe('User password (required if code is not provided)'),
+  })
+  .meta({ id: 'MfaDisableDto' });
+
 const OAuthAuthorizeResponseSchema = z
   .object({
     url: z.string().describe('OAuth authorization URL'),
@@ -132,6 +161,7 @@ const AuthStatusResponseSchema = z
   .object({
     pinCode: z.boolean().describe('Has PIN code set'),
     password: z.boolean().describe('Has password set'),
+    mfa: z.boolean().describe('Has MFA enabled'),
     isElevated: z.boolean().describe('Is elevated session'),
     expiresAt: z.string().optional().describe('Session expiration date'),
     pinExpiresAt: z.string().optional().describe('PIN expiration date'),
@@ -146,6 +176,9 @@ export class ChangePasswordDto extends createZodDto(ChangePasswordSchema) {}
 export class PinCodeSetupDto extends createZodDto(PinCodeSetupSchema) {}
 export class PinCodeResetDto extends createZodDto(PinCodeResetSchema) {}
 export class SessionUnlockDto extends createZodDto(SessionUnlockSchema) {}
+export class MfaSetupResponseDto extends createZodDto(MfaSetupResponseSchema) {}
+export class MfaEnableDto extends createZodDto(MfaEnableSchema) {}
+export class MfaDisableDto extends createZodDto(MfaDisableSchema) {}
 export class PinCodeChangeDto extends createZodDto(PinCodeChangeSchema) {}
 export class ValidateAccessTokenResponseDto extends createZodDto(ValidateAccessTokenResponseSchema) {}
 export class OAuthCallbackDto extends createZodDto(OAuthCallbackSchema) {}

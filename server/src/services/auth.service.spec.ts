@@ -6,6 +6,7 @@ import { UserAdmin } from 'src/database.js';
 import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
 import { AuthType, Permission } from 'src/enum.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { generateTotp } from 'src/utils/totp.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { OAuthProfileFactory } from 'test/factories/oauth-profile.factory.js';
@@ -30,6 +31,15 @@ const dto = {
   email,
   password: 'password',
 };
+
+const mfaSecret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
+const mfaUser = (overrides: { mfaSecret?: string | null; mfaEnabled?: boolean } = {}) => ({
+  pinCode: null,
+  password: 'password (hashed)',
+  mfaSecret: null,
+  mfaEnabled: false,
+  ...overrides,
+});
 
 describe(AuthService.name, () => {
   let sut: AuthService;
@@ -67,6 +77,33 @@ describe(AuthService.name, () => {
       await expect(sut.login(dto, loginDetails)).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(mocks.user.getByEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('should require an MFA code if MFA is enabled', async () => {
+      const user = UserFactory.create({ password: 'immich_password', mfaEnabled: true, mfaSecret });
+      mocks.user.getByEmail.mockResolvedValue(user);
+
+      await expect(sut.login(dto, loginDetails)).rejects.toThrow('MFA code required');
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a wrong MFA code', async () => {
+      const user = UserFactory.create({ password: 'immich_password', mfaEnabled: true, mfaSecret });
+      mocks.user.getByEmail.mockResolvedValue(user);
+      const wrongCode = generateTotp(mfaSecret, Date.now() + 10 * 60_000);
+
+      await expect(sut.login({ ...dto, mfaCode: wrongCode }, loginDetails)).rejects.toThrow('Incorrect MFA code');
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('should log in with a valid MFA code', async () => {
+      const user = UserFactory.create({ password: 'immich_password', mfaEnabled: true, mfaSecret });
+      mocks.user.getByEmail.mockResolvedValue(user);
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await expect(sut.login({ ...dto, mfaCode: generateTotp(mfaSecret) }, loginDetails)).resolves.toMatchObject({
+        userId: user.id,
+      });
     });
 
     it('should successfully log the user in', async () => {
@@ -1526,7 +1563,7 @@ describe(AuthService.name, () => {
       const auth = AuthFactory.create(user);
       const dto = { pinCode: '123456' };
 
-      mocks.user.getForPinCode.mockResolvedValue({ pinCode: null, password: '' });
+      mocks.user.getForPinCode.mockResolvedValue({ pinCode: null, password: '', mfaSecret: null, mfaEnabled: false });
       mocks.user.update.mockResolvedValue(user);
 
       await sut.setupPinCode(auth, dto);
@@ -1540,7 +1577,12 @@ describe(AuthService.name, () => {
       const user = UserFactory.create();
       const auth = AuthFactory.create(user);
 
-      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.user.getForPinCode.mockResolvedValue({
+        pinCode: '123456 (hashed)',
+        password: '',
+        mfaSecret: null,
+        mfaEnabled: false,
+      });
 
       await expect(sut.setupPinCode(auth, { pinCode: '123456' })).rejects.toThrow('User already has a PIN code');
     });
@@ -1552,7 +1594,12 @@ describe(AuthService.name, () => {
       const auth = AuthFactory.create(user);
       const dto = { pinCode: '123456', newPinCode: '012345' };
 
-      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.user.getForPinCode.mockResolvedValue({
+        pinCode: '123456 (hashed)',
+        password: '',
+        mfaSecret: null,
+        mfaEnabled: false,
+      });
       mocks.user.update.mockResolvedValue(user);
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
 
@@ -1564,7 +1611,12 @@ describe(AuthService.name, () => {
 
     it('should fail if the PIN code does not match', async () => {
       const user = UserFactory.create();
-      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.user.getForPinCode.mockResolvedValue({
+        pinCode: '123456 (hashed)',
+        password: '',
+        mfaSecret: null,
+        mfaEnabled: false,
+      });
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
 
       await expect(
@@ -1577,7 +1629,12 @@ describe(AuthService.name, () => {
     it('should reset the PIN code', async () => {
       const currentSession = SessionFactory.create();
       const user = UserFactory.create();
-      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.user.getForPinCode.mockResolvedValue({
+        pinCode: '123456 (hashed)',
+        password: '',
+        mfaSecret: null,
+        mfaEnabled: false,
+      });
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
       mocks.session.lockAll.mockResolvedValue(void 0);
       mocks.session.update.mockResolvedValue(currentSession);
@@ -1590,10 +1647,97 @@ describe(AuthService.name, () => {
 
     it('should throw if the PIN code does not match', async () => {
       const user = UserFactory.create();
-      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.user.getForPinCode.mockResolvedValue({
+        pinCode: '123456 (hashed)',
+        password: '',
+        mfaSecret: null,
+        mfaEnabled: false,
+      });
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
 
       await expect(sut.resetPinCode(AuthFactory.create(user), { pinCode: '000000' })).rejects.toThrow('Wrong PIN code');
+    });
+  });
+
+  describe('setupMfa', () => {
+    it('should store a new pending secret', async () => {
+      const user = UserFactory.create();
+      mocks.user.getForPinCode.mockResolvedValue(mfaUser());
+
+      const result = await sut.setupMfa(AuthFactory.create(user));
+
+      expect(result.secret).toMatch(/^[A-Z2-7]{32}$/);
+      expect(result.otpauthUri).toContain(`secret=${result.secret}`);
+      expect(mocks.user.update).toHaveBeenCalledWith(user.id, { mfaSecret: result.secret });
+    });
+
+    it('should fail if MFA is already enabled', async () => {
+      mocks.user.getForPinCode.mockResolvedValue(mfaUser({ mfaSecret, mfaEnabled: true }));
+
+      await expect(sut.setupMfa(AuthFactory.create())).rejects.toThrow('MFA is already enabled');
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('enableMfa', () => {
+    it('should enable MFA with a valid code', async () => {
+      const user = UserFactory.create();
+      mocks.user.getForPinCode.mockResolvedValue(mfaUser({ mfaSecret }));
+
+      await sut.enableMfa(AuthFactory.create(user), { code: generateTotp(mfaSecret) });
+
+      expect(mocks.user.update).toHaveBeenCalledWith(user.id, { mfaEnabled: true });
+    });
+
+    it('should reject a wrong code', async () => {
+      mocks.user.getForPinCode.mockResolvedValue(mfaUser({ mfaSecret }));
+      const code = generateTotp(mfaSecret, Date.now() + 10 * 60_000);
+
+      await expect(sut.enableMfa(AuthFactory.create(), { code })).rejects.toThrow('Wrong MFA code');
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should fail without a pending secret', async () => {
+      mocks.user.getForPinCode.mockResolvedValue(mfaUser());
+
+      await expect(sut.enableMfa(AuthFactory.create(), { code: '123456' })).rejects.toThrow(
+        'MFA setup has not been started',
+      );
+    });
+  });
+
+  describe('disableMfa', () => {
+    it('should disable MFA with a valid code', async () => {
+      const user = UserFactory.create();
+      mocks.user.getForPinCode.mockResolvedValue(mfaUser({ mfaSecret, mfaEnabled: true }));
+
+      await sut.disableMfa(AuthFactory.create(user), { code: generateTotp(mfaSecret) });
+
+      expect(mocks.user.update).toHaveBeenCalledWith(user.id, { mfaEnabled: false, mfaSecret: null });
+    });
+
+    it('should disable MFA with the password', async () => {
+      const user = UserFactory.create();
+      mocks.user.getForPinCode.mockResolvedValue(mfaUser({ mfaSecret, mfaEnabled: true }));
+      mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
+
+      await sut.disableMfa(AuthFactory.create(user), { password: 'password' });
+
+      expect(mocks.user.update).toHaveBeenCalledWith(user.id, { mfaEnabled: false, mfaSecret: null });
+    });
+
+    it('should reject a wrong password', async () => {
+      mocks.user.getForPinCode.mockResolvedValue(mfaUser({ mfaSecret, mfaEnabled: true }));
+      mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
+
+      await expect(sut.disableMfa(AuthFactory.create(), { password: 'wrong' })).rejects.toThrow('Wrong password');
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should require a code or password', async () => {
+      mocks.user.getForPinCode.mockResolvedValue(mfaUser({ mfaSecret, mfaEnabled: true }));
+
+      await expect(sut.disableMfa(AuthFactory.create(), {})).rejects.toThrow('Either code or password is required');
     });
   });
 });
