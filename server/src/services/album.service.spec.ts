@@ -241,6 +241,46 @@ describe(AlbumService.name, () => {
       expect(mocks.album.applyLock).toHaveBeenCalledWith(album.id);
     });
 
+    it('should add locked album assets of album members to a locked album', async () => {
+      const album = AlbumFactory.from({ isLocked: true }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const auth = AuthFactory.from(owner).session({ hasElevatedPermission: true }).build();
+      const [memberAssetId, foreignAssetId] = [newUuid(), newUuid()];
+
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValue(new Set());
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getLockedAlbumAssetIdsForAlbum.mockResolvedValue(new Set([memberAssetId]));
+
+      const results = await sut.addAssets(auth, album.id, { ids: [memberAssetId, foreignAssetId] });
+
+      expect(mocks.album.getLockedAlbumAssetIdsForAlbum).toHaveBeenCalledWith(owner.id, album.id, [
+        memberAssetId,
+        foreignAssetId,
+      ]);
+      expect(results).toEqual([
+        { id: memberAssetId, success: true },
+        { id: foreignAssetId, success: false, error: BulkIdErrorReason.NO_PERMISSION },
+      ]);
+      expect(mocks.album.applyLock).toHaveBeenCalledWith(album.id);
+    });
+
+    it('should keep locked album assets of others out of locked albums without an elevated session', async () => {
+      const album = AlbumFactory.from({ isLocked: true }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const assetId = newUuid();
+
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValue(new Set());
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getLockedAlbumAssetIdsForAlbum.mockResolvedValue(new Set([assetId]));
+
+      const results = await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [assetId] });
+
+      expect(mocks.album.getLockedAlbumAssetIdsForAlbum).not.toHaveBeenCalled();
+      expect(results).toEqual([{ id: assetId, success: false, error: BulkIdErrorReason.NO_PERMISSION }]);
+    });
+
     it('should keep assets locked for the user out of unlocked albums', async () => {
       const album = AlbumFactory.create();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;

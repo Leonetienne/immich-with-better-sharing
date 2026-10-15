@@ -5,10 +5,11 @@
 
   type Props = {
     assetIds: string[];
+    fromLockedAlbum?: boolean;
     onClose: () => void;
   };
 
-  const { assetIds, onClose }: Props = $props();
+  const { assetIds, fromLockedAlbum = false, onClose }: Props = $props();
 
   const handleClose = async (albums?: AlbumResponseDto[]) => {
     const albumIds = (albums ?? []).map(({ id }) => id);
@@ -17,7 +18,7 @@
       return;
     }
 
-    const success = await addAssetsToAlbums(albumIds, assetIds, { notify: true });
+    const success = await addAssetsToAlbums(albumIds, assetIds, { notify: true, fromLockedAlbum });
     if (success) {
       onClose();
     }

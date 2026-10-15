@@ -168,7 +168,8 @@ export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponse
 };
 
 // Locked albums need an unlocked session and take their items out of every other place.
-const confirmLocked = async (prompt: string) => {
+// Items from a locked album are already out of every other place, so they skip the prompt.
+const confirmLocked = async (prompt?: string) => {
   const $t = await getFormatter();
   const { isElevated } = await getAuthStatus();
   if (!isElevated) {
@@ -177,16 +178,21 @@ const confirmLocked = async (prompt: string) => {
     return false;
   }
 
-  return modalManager.showDialog({ title: $t('locked_album'), prompt, icon: mdiLockOutline });
+  return prompt ? modalManager.showDialog({ title: $t('locked_album'), prompt, icon: mdiLockOutline }) : true;
 };
 
-export const addAssetsToAlbums = async (albumIds: string[], assetIds: string[], { notify }: { notify: boolean }) => {
+export const addAssetsToAlbums = async (
+  albumIds: string[],
+  assetIds: string[],
+  { notify, fromLockedAlbum = false }: { notify: boolean; fromLockedAlbum?: boolean },
+) => {
   const $t = await getFormatter();
 
   if (!authManager.isSharedLink) {
     const albums = await getAllAlbums({});
     const hasLocked = albums.some(({ id, isLocked }) => isLocked && albumIds.includes(id));
-    if (hasLocked && !(await confirmLocked($t('locked_album_add_assets_confirm')))) {
+    const prompt = fromLockedAlbum ? undefined : $t('locked_album_add_assets_confirm');
+    if (hasLocked && !(await confirmLocked(prompt))) {
       return false;
     }
   }

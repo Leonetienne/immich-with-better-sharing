@@ -75,7 +75,7 @@ export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseD
     title: $t('add_to_album'),
     icon: mdiPlus,
     shortcuts: [{ key: 'l' }],
-    onAction: () => modalManager.show(AssetAddToAlbumModal, { assetIds }),
+    onAction: () => modalManager.show(AssetAddToAlbumModal, { assetIds, fromLockedAlbum: album?.isLocked }),
   };
 
   const CreateSharedLink: ActionItem = {

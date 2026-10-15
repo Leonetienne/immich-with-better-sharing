@@ -269,6 +269,25 @@ export class AlbumRepository {
     return new Set(rows.map(({ id }) => id));
   }
 
+  // Assets the user sees in a locked album whose owners are members of the target album.
+  async getLockedAlbumAssetIdsForAlbum(userId: string, albumId: string, assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', anyUuid(assetIds))
+      .where('asset.deletedAt', 'is', null)
+      .where((eb) => inLockedAlbumOf(eb, userId))
+      .where('asset.ownerId', 'in', (eb) =>
+        eb.selectFrom('album_user').select('album_user.userId').where('album_user.albumId', '=', albumId),
+      )
+      .execute();
+    return new Set(rows.map(({ id }) => id));
+  }
+
   // Album users' own assets get locked and the album's assets leave the users' own unlocked albums.
   async applyLock(albumId: string): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
