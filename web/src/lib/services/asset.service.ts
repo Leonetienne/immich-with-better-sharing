@@ -206,7 +206,7 @@ export const getAssetActions = (
   const Favorite: ActionItem = {
     title: $t('to_favorite'),
     icon: mdiHeartOutline,
-    $if: () => isOwner && !asset.isFavorite,
+    $if: () => authManager.canCurate(asset.ownerId) && !asset.isFavorite,
     onAction: () => handleFavorite(asset),
     shortcuts: [{ key: 'f' }],
   };
@@ -214,7 +214,7 @@ export const getAssetActions = (
   const Unfavorite: ActionItem = {
     title: $t('unfavorite'),
     icon: mdiHeart,
-    $if: () => isOwner && asset.isFavorite,
+    $if: () => authManager.canCurate(asset.ownerId) && asset.isFavorite,
     onAction: () => handleUnfavorite(asset),
     shortcuts: [{ key: 'f' }],
   };

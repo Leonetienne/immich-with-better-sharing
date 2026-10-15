@@ -411,6 +411,25 @@ class StackAccess {
       .execute()
       .then((stacks) => new Set(stacks.map((stack) => stack.id)));
   }
+
+  @ChunkedSet({ paramIndex: 1 })
+  async checkPartnerAccess(userId: string, stackIds: Set<string>) {
+    if (stackIds.size === 0) {
+      return new Set<string>();
+    }
+
+    return this.db
+      .selectFrom('stack')
+      .innerJoin('partner', 'partner.sharedById', 'stack.ownerId')
+      .innerJoin('user as sharedBy', (join) =>
+        join.onRef('sharedBy.id', '=', 'partner.sharedById').on('sharedBy.deletedAt', 'is', null),
+      )
+      .select('stack.id')
+      .where('stack.id', 'in', [...stackIds])
+      .where('partner.sharedWithId', '=', userId)
+      .execute()
+      .then((stacks) => new Set(stacks.map((stack) => stack.id)));
+  }
 }
 
 class TimelineAccess {

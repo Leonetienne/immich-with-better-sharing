@@ -53,6 +53,9 @@ import { extractTimeZone } from 'src/utils/date.js';
 import { batched, findOrFail } from 'src/utils/misc.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
+const isFavoriteOnly = (dto: object) =>
+  Object.entries(dto).every(([key, value]) => key === 'isFavorite' || value === undefined);
+
 @Injectable()
 export class AssetService extends BaseService {
   async getStatistics(auth: AuthDto, dto: AssetStatsDto) {
@@ -62,6 +65,19 @@ export class AssetService extends BaseService {
 
     const stats = await this.assetRepository.getStatistics(auth.user.id, dto);
     return mapStats(stats);
+  }
+
+  // Owners favorite via asset.isFavorite, partners via asset_user_favorite.
+  private async requireFavoriteAccess(auth: AuthDto, ids: string[]) {
+    const owned = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids });
+    const rest = new Set(ids).difference(owned);
+    const partner = auth.sharedLink
+      ? new Set<string>()
+      : await this.accessRepository.asset.checkPartnerAccess(auth.user.id, rest);
+    if (partner.size !== rest.size) {
+      throw new BadRequestException(`Not found or no ${Permission.AssetUpdate} access`);
+    }
+    return { owned: [...owned], partner: [...partner] };
   }
 
   async get(auth: AuthDto, id: string): Promise<AssetResponseDto | SanitizedAssetResponseDto> {
@@ -85,6 +101,10 @@ export class AssetService extends BaseService {
     }
 
     const data = mapAsset(asset, { withStack: true, auth });
+    if (!auth.sharedLink && asset.ownerId !== auth.user.id) {
+      const favoriteIds = await this.assetRepository.getUserFavoriteIds(auth.user.id, [asset.id]);
+      data.isFavorite = favoriteIds.has(asset.id);
+    }
 
     if (auth.sharedLink) {
       delete data.owner;
@@ -98,6 +118,14 @@ export class AssetService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
+    if (dto.isFavorite !== undefined && isFavoriteOnly(dto)) {
+      const { partner } = await this.requireFavoriteAccess(auth, [id]);
+      if (partner.length > 0) {
+        await this.assetRepository.setUserFavorite(auth.user.id, partner, dto.isFavorite);
+        return this.get(auth, id) as Promise<AssetResponseDto>;
+      }
+    }
+
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
     const { description, dateTimeOriginal, latitude, longitude, rating, ...rest } = dto;
@@ -150,6 +178,20 @@ export class AssetService extends BaseService {
       dateTimeRelative,
       timeZone,
     } = dto;
+
+    if (isFavorite !== undefined && isFavoriteOnly(omitBy(dto, (_, key) => key === 'ids'))) {
+      const { owned, partner } = await this.requireFavoriteAccess(auth, ids);
+      await this.assetRepository.updateAll(owned, { isFavorite });
+      await this.assetRepository.setUserFavorite(auth.user.id, partner, isFavorite);
+      const assets = await this.assetRepository.getByIds(ids);
+      for (const asset of assets) {
+        const mapped = mapAsset(asset, { auth });
+        mapped.isFavorite = isFavorite;
+        this.websocketRepository.clientSend('on_asset_update', auth.user.id, mapped);
+      }
+      return;
+    }
+
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
     const assetDto = omitBy({ isFavorite, visibility, duplicateId }, isUndefined);

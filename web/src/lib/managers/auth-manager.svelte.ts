@@ -2,7 +2,9 @@ import {
   getAboutInfo,
   getMyPreferences,
   getMyUser,
+  getPartners,
   logout,
+  PartnerDirection,
   type UserAdminResponseDto,
   type UserPreferencesResponseDto,
 } from '@immich/sdk';
@@ -20,6 +22,7 @@ class AuthManager {
 
   #user = $state<UserAdminResponseDto>();
   #preferences = $state<UserPreferencesResponseDto>();
+  #partnerIds = $state<Set<string>>(new Set());
 
   get authenticated() {
     return !!(this.#user && this.#preferences);
@@ -39,6 +42,16 @@ class AuthManager {
     }
 
     return this.#preferences;
+  }
+
+  // Owners and partners who share with the current user may favorite and stack.
+  canCurate(ownerId: string) {
+    return this.authenticated && (ownerId === this.user.id || this.#partnerIds.has(ownerId));
+  }
+
+  async refreshPartners() {
+    const partners = await getPartners({ direction: PartnerDirection.SharedWith }).catch(() => []);
+    this.#partnerIds = new Set(partners.map(({ id }) => id));
   }
 
   constructor() {
@@ -64,6 +77,7 @@ class AuthManager {
       const [user, preferences] = await Promise.all([getMyUser(), getMyPreferences()]);
       this.#preferences = preferences;
       this.#user = user;
+      await this.refreshPartners();
 
       if (user.license?.activatedAt) {
         this.isPurchased = true;
@@ -116,6 +130,7 @@ class AuthManager {
   reset() {
     this.#user = undefined;
     this.#preferences = undefined;
+    this.#partnerIds = new Set();
   }
 
   #hasAuthCookie() {
