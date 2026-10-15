@@ -1,3 +1,15 @@
+## What is this?
+This is an experimental, modified version of immich with some custom features.  
+!!! DO NOT USE THIS IN PRODUCTION AS THIS IS NOT AS STABLE AS UPSTREAM IMMICH AND PROBABLY HAS SECURITY ISSUES !!!  
+!!! While these features DO work, they are entirely ai-made without proper monitoring and thus considered unsafe. If you want to use this, DO SO AT YOUR OWN RISK !!!   
+This is intended to be used in a homelab environment for experimental purposes.
+
+Additional features:
+- Users can favourite assets shared with them
+- Users can allow partners to edit their assets (crop, rotate, metadata, stacking, ...)
+- Locked albums (Multiple locked folders, shareable with other users)
+- TOTP MFA for user auth
+
 <p align="center"> 
   <br/>
   <a href="https://opensource.org/license/agpl-v3"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg?color=3F51B5&style=for-the-badge&label=License&logoColor=000000&labelColor=ececec" alt="License: AGPLv3"></a>
