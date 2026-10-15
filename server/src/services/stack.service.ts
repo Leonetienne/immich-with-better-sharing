@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Stack } from 'src/database.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { StackCreateDto, StackResponseDto, StackSearchDto, StackUpdateDto, mapStack } from 'src/dtos/stack.dto.js';
@@ -15,7 +16,7 @@ export class StackService extends BaseService {
       primaryAssetId: dto.primaryAssetId,
     });
 
-    return stacks.map((stack) => mapStack(stack, { auth }));
+    return Promise.all(stacks.map((stack) => this.mapVisible(auth, stack)));
   }
 
   async create(auth: AuthDto, dto: StackCreateDto): Promise<StackResponseDto> {
@@ -25,13 +26,13 @@ export class StackService extends BaseService {
 
     await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: auth.user.id });
 
-    return mapStack(stack, { auth });
+    return this.mapVisible(auth, stack);
   }
 
   async get(auth: AuthDto, id: string): Promise<StackResponseDto> {
     await this.requireAccess({ auth, permission: Permission.StackRead, ids: [id] });
     const stack = await this.findOrFail(id);
-    return mapStack(stack, { auth });
+    return this.mapVisible(auth, stack);
   }
 
   async update(auth: AuthDto, id: string, dto: StackUpdateDto): Promise<StackResponseDto> {
@@ -45,7 +46,7 @@ export class StackService extends BaseService {
 
     await this.eventRepository.emit('StackUpdate', { stackId: id, userId: auth.user.id });
 
-    return mapStack(updatedStack, { auth });
+    return this.mapVisible(auth, updatedStack);
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
@@ -78,29 +79,37 @@ export class StackService extends BaseService {
     await this.eventRepository.emit('StackUpdate', { stackId, userId: auth.user.id });
   }
 
-  // Stacks belong to the assets' owner, so partners may only stack assets of a single owner.
+  // Editable assets stack freely across owners. Otherwise partners may only stack one partner's assets.
+  // The stack belongs to the owner of the first (primary) asset.
   private async requireStackCreateAccess(auth: AuthDto, assetIds: string[]): Promise<string> {
-    const owned = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids: assetIds });
-    if (owned.size === new Set(assetIds).size) {
-      return auth.user.id;
+    const ids = new Set(assetIds);
+    const editable = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids });
+    const assets = await this.assetRepository.getByIds(assetIds);
+    const primary = assets.find(({ id }) => id === assetIds[0]);
+
+    if (editable.size === ids.size && primary) {
+      return primary.ownerId;
     }
 
-    if (owned.size > 0 || auth.sharedLink) {
-      throw new BadRequestException('Stack assets must belong to a single owner');
-    }
-
-    const partner = await this.accessRepository.asset.checkPartnerAccess(auth.user.id, new Set(assetIds));
-    if (partner.size !== new Set(assetIds).size) {
+    const partner = auth.sharedLink
+      ? new Set<string>()
+      : await this.accessRepository.asset.checkPartnerAccess(auth.user.id, ids);
+    if (partner.size !== ids.size || !primary) {
       throw new BadRequestException(`Not found or no ${Permission.AssetUpdate} access`);
     }
 
-    const assets = await this.assetRepository.getByIds(assetIds);
-    const ownerIds = new Set(assets.map((asset) => asset.ownerId));
-    if (ownerIds.size !== 1) {
+    if (new Set(assets.map(({ ownerId }) => ownerId)).size !== 1) {
       throw new BadRequestException('Stack assets must belong to a single owner');
     }
 
-    return [...ownerIds][0];
+    return primary.ownerId;
+  }
+
+  // Mixed-owner stacks may contain assets the viewer has no access to.
+  private async mapVisible(auth: AuthDto, stack: Stack): Promise<StackResponseDto> {
+    const ids = stack.assets.map(({ id }) => id);
+    const readable = await this.checkAccess({ auth, permission: Permission.AssetRead, ids });
+    return mapStack({ ...stack, assets: stack.assets.filter(({ id }) => readable.has(id)) }, { auth });
   }
 
   private findOrFail(id: string) {

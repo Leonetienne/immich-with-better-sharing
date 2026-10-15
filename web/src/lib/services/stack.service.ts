@@ -27,8 +27,11 @@ import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 import { navigate } from '$lib/utils/navigation';
 
-// A stack belongs to one owner, so a mixed selection falls back to the user's own assets.
+// Editable assets stack across owners. Otherwise only one partner's assets, falling back to the user's own.
 const getStackableAssets = () => {
+  if (assetMultiSelectManager.isAllEditable) {
+    return assetMultiSelectManager.editableAssets;
+  }
   const assets = assetMultiSelectManager.curatableAssets;
   return new Set(assets.map(({ ownerId }) => ownerId)).size === 1 ? assets : assetMultiSelectManager.ownedAssets;
 };
@@ -59,7 +62,7 @@ export const getStackActions = ($t: MessageFormatter, stack: StackResponseDto | 
   const AddUploads: ActionItem = {
     title: $t('add_upload_to_stack', { values: { isStack: !!stack } }),
     icon: mdiUploadMultiple,
-    $if: () => isAssetOwner,
+    $if: () => authManager.canEdit(asset.ownerId),
     onAction: () => handleAddUploadToStack(stack, asset),
   };
 

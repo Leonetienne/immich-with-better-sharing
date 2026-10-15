@@ -196,7 +196,9 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     }
 
     case Permission.AssetUpdate: {
-      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isEditor = await access.asset.checkPartnerAccess(auth.user.id, ids.difference(isOwner), true);
+      return isOwner.union(isEditor);
     }
 
     case Permission.AssetDelete: {
@@ -208,15 +210,21 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     }
 
     case Permission.AssetEditGet: {
-      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isEditor = await access.asset.checkPartnerAccess(auth.user.id, ids.difference(isOwner), true);
+      return isOwner.union(isEditor);
     }
 
     case Permission.AssetEditCreate: {
-      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isEditor = await access.asset.checkPartnerAccess(auth.user.id, ids.difference(isOwner), true);
+      return isOwner.union(isEditor);
     }
 
     case Permission.AssetEditDelete: {
-      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      const isEditor = await access.asset.checkPartnerAccess(auth.user.id, ids.difference(isOwner), true);
+      return isOwner.union(isEditor);
     }
 
     case Permission.AssetFileRead:
@@ -387,19 +395,31 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     case Permission.StackRead: {
       const isOwner = await access.stack.checkOwnerAccess(auth.user.id, ids);
       const isPartner = await access.stack.checkPartnerAccess(auth.user.id, ids.difference(isOwner));
-      return isOwner.union(isPartner);
+      const isMember = await access.stack.checkMemberAccess(
+        auth.user.id,
+        ids.difference(isOwner).difference(isPartner),
+      );
+      return isOwner.union(isPartner).union(isMember);
     }
 
     case Permission.StackUpdate: {
       const isOwner = await access.stack.checkOwnerAccess(auth.user.id, ids);
       const isPartner = await access.stack.checkPartnerAccess(auth.user.id, ids.difference(isOwner));
-      return isOwner.union(isPartner);
+      const isMember = await access.stack.checkMemberAccess(
+        auth.user.id,
+        ids.difference(isOwner).difference(isPartner),
+      );
+      return isOwner.union(isPartner).union(isMember);
     }
 
     case Permission.StackDelete: {
       const isOwner = await access.stack.checkOwnerAccess(auth.user.id, ids);
       const isPartner = await access.stack.checkPartnerAccess(auth.user.id, ids.difference(isOwner));
-      return isOwner.union(isPartner);
+      const isMember = await access.stack.checkMemberAccess(
+        auth.user.id,
+        ids.difference(isOwner).difference(isPartner),
+      );
+      return isOwner.union(isPartner).union(isMember);
     }
 
     case Permission.WorkflowRead:

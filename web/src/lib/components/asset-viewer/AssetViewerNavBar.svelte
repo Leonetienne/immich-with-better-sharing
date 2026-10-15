@@ -164,7 +164,7 @@
 
         <ActionMenuItem action={PlayOriginalVideo} />
 
-        {#if isOwner}
+        {#if authManager.canEdit(asset.ownerId)}
           <hr />
           <ActionMenuItem action={Actions.RefreshFacesJob} />
           <ActionMenuItem action={Actions.RefreshMetadataJob} />

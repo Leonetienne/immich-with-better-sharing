@@ -28,6 +28,10 @@ export class AssetMultiSelectManager {
     authManager.authenticated ? this.assets.filter((asset) => authManager.canCurate(asset.ownerId)) : [],
   );
   isAllCuratable = $derived(this.assets.length > 0 && this.curatableAssets.length === this.assets.length);
+  editableAssets = $derived(
+    authManager.authenticated ? this.assets.filter((asset) => authManager.canEdit(asset.ownerId)) : [],
+  );
+  isAllEditable = $derived(this.assets.length > 0 && this.editableAssets.length === this.assets.length);
 
   isAllTrashed = $derived(this.assets.every((asset) => asset.isTrashed));
   isAllArchived = $derived(this.assets.every((asset) => asset.visibility === AssetVisibility.Archive));

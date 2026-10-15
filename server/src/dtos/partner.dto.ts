@@ -11,7 +11,11 @@ const PartnerCreateSchema = z
 
 const PartnerUpdateSchema = z
   .object({
-    inTimeline: z.boolean().describe('Show partner assets in timeline'),
+    inTimeline: z.boolean().optional().describe('Show partner assets in timeline (path ID is the sharing user)'),
+    allowEdits: z
+      .boolean()
+      .optional()
+      .describe('Allow the partner to edit and stack your assets (path ID is the partner you share with)'),
   })
   .meta({ id: 'PartnerUpdateDto' });
 
@@ -23,6 +27,7 @@ const PartnerSearchSchema = z
 
 const PartnerResponseSchema = UserResponseSchema.extend({
   inTimeline: z.boolean().optional().describe('Show in timeline'),
+  allowEdits: z.boolean().optional().describe('Partner may edit the assets shared by sharedBy'),
 })
   .describe('Partner response')
   .meta({ id: 'PartnerResponseDto' });

@@ -141,5 +141,38 @@ describe(PartnerService.name, () => {
         { inTimeline: true },
       );
     });
+
+    it('should let the sharing user allow edits', async () => {
+      const user1 = UserFactory.create();
+      const user2 = UserFactory.create();
+      const partner = PartnerFactory.from().sharedBy(user1).sharedWith(user2).build();
+      const auth = AuthFactory.create({ id: user1.id });
+
+      mocks.partner.get.mockResolvedValue(getForPartner(partner));
+      mocks.partner.update.mockResolvedValue(getForPartner(partner));
+
+      await expect(sut.update(auth, user2.id, { allowEdits: true })).resolves.toBeDefined();
+      expect(mocks.partner.update).toHaveBeenCalledWith(
+        { sharedById: user1.id, sharedWithId: user2.id },
+        { allowEdits: true },
+      );
+    });
+
+    it('should reject allowing edits without a partnership', async () => {
+      const auth = AuthFactory.create();
+
+      mocks.partner.get.mockResolvedValue(undefined);
+
+      await expect(sut.update(auth, UserFactory.create().id, { allowEdits: true })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.partner.update).not.toHaveBeenCalled();
+    });
+
+    it('should reject updating both directions at once', async () => {
+      await expect(
+        sut.update(AuthFactory.create(), UserFactory.create().id, { allowEdits: true, inTimeline: true }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 });

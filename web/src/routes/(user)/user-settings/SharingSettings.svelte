@@ -38,6 +38,7 @@
     sharedByMe: boolean;
     sharedWithMe: boolean;
     inTimeline: boolean;
+    allowEdits: boolean;
   };
 
   let clusterGroupId: string = $state('');
@@ -156,6 +157,7 @@
           sharedByMe: true,
           sharedWithMe: false,
           inTimeline: candidate.inTimeline ?? false,
+          allowEdits: candidate.allowEdits ?? false,
         },
       ];
     }
@@ -171,6 +173,7 @@
             sharedByMe: false,
             sharedWithMe: true,
             inTimeline: candidate.inTimeline ?? false,
+            allowEdits: false,
           },
         ];
       } else {
@@ -223,6 +226,16 @@
       partner.inTimeline = inTimeline;
     } catch (error) {
       handleError(error, $t('errors.unable_to_update_timeline_display_status'));
+    }
+  };
+
+  const handleAllowEditsChanged = async (partner: PartnerSharing, allowEdits: boolean) => {
+    try {
+      await updatePartner({ id: partner.user.id, partnerUpdateDto: { allowEdits } });
+
+      partner.allowEdits = allowEdits;
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_update_partner_edits'));
     }
   };
 
@@ -382,6 +395,13 @@
                     {$t('partner_can_access_location')}
                   </li>
                 </ul>
+
+                <SettingSwitch
+                  title={$t('partner_allow_edits')}
+                  subtitle={$t('partner_allow_edits_description')}
+                  bind:checked={partner.allowEdits}
+                  onToggle={(isChecked) => handleAllowEditsChanged(partner, isChecked)}
+                />
               {/if}
 
               <!-- this user is sharing assets with me -->

@@ -65,7 +65,6 @@ export class StackRepository {
     return this.db.transaction().execute(async (tx) => {
       const stacks = await tx
         .selectFrom('stack')
-        .where('stack.ownerId', '=', entity.ownerId)
         .where('stack.primaryAssetId', 'in', assetIds)
         .select('stack.id')
         .select((eb) =>

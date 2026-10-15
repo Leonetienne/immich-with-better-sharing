@@ -249,9 +249,9 @@ export const getAssetType = (type: AssetTypeEnum) => {
 };
 
 export const getOwnedAssetsWithWarning = (assets: TimelineAsset[], user: UserResponseDto | null): string[] => {
-  const ids = [...assets].filter((a) => user && a.ownerId === user.id).map((a) => a.id);
+  const ids = [...assets].filter((a) => user && authManager.canEdit(a.ownerId)).map((a) => a.id);
 
-  const numberOfIssues = [...assets].filter((a) => user && a.ownerId !== user.id).length;
+  const numberOfIssues = [...assets].filter((a) => user && !authManager.canEdit(a.ownerId)).length;
   if (numberOfIssues > 0) {
     const $t = get(t);
     toastManager.warning($t('errors.cant_change_metadata_assets_count', { values: { count: numberOfIssues } }));

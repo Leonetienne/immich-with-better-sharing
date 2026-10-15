@@ -203,7 +203,7 @@ class AssetAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkPartnerAccess(userId: string, assetIds: Set<string>) {
+  async checkPartnerAccess(userId: string, assetIds: Set<string>, requireAllowEdits = false) {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
@@ -216,6 +216,7 @@ class AssetAccess {
       .innerJoin('asset', (join) => join.onRef('asset.ownerId', '=', 'sharedBy.id').on('asset.deletedAt', 'is', null))
       .select('asset.id')
       .where('partner.sharedWithId', '=', userId)
+      .$if(requireAllowEdits, (qb) => qb.where('partner.allowEdits', '=', true))
       .where((eb) =>
         eb.or([
           eb('asset.visibility', '=', sql.lit(AssetVisibility.Timeline)),
@@ -419,6 +420,23 @@ class StackAccess {
       .where('partner.sharedWithId', '=', userId)
       .execute()
       .then((stacks) => new Set(stacks.map((stack) => stack.id)));
+  }
+
+  @ChunkedSet({ paramIndex: 1 })
+  async checkMemberAccess(userId: string, stackIds: Set<string>) {
+    if (stackIds.size === 0) {
+      return new Set<string>();
+    }
+
+    return this.db
+      .selectFrom('asset')
+      .select('asset.stackId')
+      .where('asset.stackId', 'in', [...stackIds])
+      .where('asset.ownerId', '=', userId)
+      .where('asset.deletedAt', 'is', null)
+      .distinct()
+      .execute()
+      .then((assets) => new Set(assets.map((asset) => asset.stackId!)));
   }
 }
 

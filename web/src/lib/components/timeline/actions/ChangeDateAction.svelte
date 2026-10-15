@@ -15,7 +15,7 @@
   let { menuItem = false }: Props = $props();
 
   const handleChangeDate = async () => {
-    const assets = assetMultiSelectManager.ownedAssets;
+    const assets = assetMultiSelectManager.editableAssets;
     const initialDate = assets.length === 1 ? fromTimelinePlainDateTime(assets[0].localDateTime) : DateTime.now();
     const success = await modalManager.show(AssetSelectionChangeDateModal, {
       initialDate,

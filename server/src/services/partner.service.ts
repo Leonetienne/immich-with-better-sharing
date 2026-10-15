@@ -45,7 +45,26 @@ export class PartnerService extends BaseService {
       .map((partner) => this.mapPartner(partner, direction));
   }
 
-  async update(auth: AuthDto, sharedById: string, dto: PartnerUpdateDto): Promise<PartnerResponseDto> {
+  async update(auth: AuthDto, id: string, dto: PartnerUpdateDto): Promise<PartnerResponseDto> {
+    if (dto.allowEdits !== undefined && dto.inTimeline !== undefined) {
+      throw new BadRequestException('inTimeline and allowEdits apply to different partnerships');
+    }
+
+    if (dto.allowEdits !== undefined) {
+      const partnerId: PartnerIds = { sharedById: auth.user.id, sharedWithId: id };
+      if (!(await this.partnerRepository.get(partnerId))) {
+        throw new BadRequestException('Partner not found');
+      }
+
+      const entity = await this.partnerRepository.update(partnerId, { allowEdits: dto.allowEdits });
+      return this.mapPartner(entity, SharingDirection.SharedBy);
+    }
+
+    if (dto.inTimeline === undefined) {
+      throw new BadRequestException('Nothing to update');
+    }
+
+    const sharedById = id;
     await this.requireAccess({ auth, permission: Permission.PartnerUpdate, ids: [sharedById] });
     const partnerId: PartnerIds = { sharedById, sharedWithId: auth.user.id };
 
@@ -58,6 +77,6 @@ export class PartnerService extends BaseService {
     const sharedUser = direction === SharingDirection.SharedBy ? partner.sharedWith : partner.sharedBy;
     const user = mapUser(sharedUser);
 
-    return { ...user, inTimeline: partner.inTimeline };
+    return { ...user, inTimeline: partner.inTimeline, allowEdits: partner.allowEdits };
   }
 }
