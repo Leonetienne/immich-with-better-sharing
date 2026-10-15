@@ -134,7 +134,15 @@ export class JobService extends BaseService {
         const edits = await this.assetEditRepository.getWithSyncInfo(item.data.id);
 
         if (asset) {
-          this.websocketRepository.clientSend('AssetEditReadyV2', asset.ownerId, {
+          // partners may have applied the edit, so they wait for this event too
+          const partners = await this.partnerRepository.getAll(asset.ownerId);
+          const recipients = [
+            asset.ownerId,
+            ...partners
+              .filter(({ sharedById }) => sharedById === asset.ownerId)
+              .map(({ sharedWithId }) => sharedWithId),
+          ];
+          const payload = {
             asset: {
               id: asset.id,
               ownerId: asset.ownerId,
@@ -158,7 +166,10 @@ export class JobService extends BaseService {
               isEdited: asset.isEdited,
             },
             edit: edits,
-          });
+          };
+          for (const recipient of recipients) {
+            this.websocketRepository.clientSend('AssetEditReadyV2', recipient, payload);
+          }
         }
 
         break;
