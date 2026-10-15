@@ -1,6 +1,7 @@
 {
   "name": "immich",
   "version": "3.3.3",
+  "forkRevision": 0,
   "description": "",
   "author": "",
   "private": true,

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { serverVersion } from 'src/constants.js';
+import { displayVersion, forkRepositoryUrl, serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
@@ -40,14 +40,14 @@ export class ServerService extends BaseService {
   }
 
   async getAboutInfo(): Promise<ServerAboutResponseDto> {
-    const version = `v${serverVersion.toString()}`;
+    const version = displayVersion;
     const { buildMetadata } = this.configRepository.getEnv();
     const buildVersions = await this.serverInfoRepository.getBuildVersions();
     const licensed = await this.systemMetadataRepository.get(SystemMetadataKey.License);
 
     return {
       version,
-      versionUrl: `https://github.com/immich-app/immich/releases/tag/${version}`,
+      versionUrl: forkRepositoryUrl,
       licensed: !!licensed,
       ...buildMetadata,
       ...buildVersions,

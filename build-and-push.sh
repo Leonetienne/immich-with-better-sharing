@@ -12,6 +12,8 @@ cd "$(dirname "$0")"
 COMMIT="$(git rev-parse HEAD)"
 SHORT="$(git rev-parse --short HEAD)"
 REF="$(git rev-parse --abbrev-ref HEAD)"
+# immich version plus our revision from server/package.json, e.g. v3.3.3.0
+VERSION="$(python3 -c 'import json; p = json.load(open("server/package.json")); print("v%s.%s" % (p["version"], p.get("forkRevision", 0)))')"
 OUTPUT="--push"
 if [[ "${1:-}" == "--no-push" ]]; then
   OUTPUT="--load"
@@ -25,10 +27,11 @@ docker buildx build \
   --platform "$PLATFORM" \
   -f server/Dockerfile \
   --build-arg BUILD_ID="$SHORT" \
-  --build-arg BUILD_IMAGE="${IMAGE}:${SHORT}" \
+  --build-arg BUILD_IMAGE="${IMAGE}:${VERSION}" \
   --build-arg BUILD_SOURCE_REF="$REF" \
   --build-arg BUILD_SOURCE_COMMIT="$COMMIT" \
   -t "${IMAGE}:latest" \
+  -t "${IMAGE}:${VERSION}" \
   -t "${IMAGE}:${SHORT}" \
   $OUTPUT \
   .

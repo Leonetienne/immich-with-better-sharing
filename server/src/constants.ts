@@ -51,8 +51,11 @@ export const IWorker = 'IWorker';
 
 const basePath = dirname(import.meta.filename);
 const packageFile = join(basePath, '..', 'package.json');
-const { version } = JSON.parse(readFileSync(packageFile, 'utf8'));
+const { version, forkRevision } = JSON.parse(readFileSync(packageFile, 'utf8'));
 export const serverVersion = new SemVer(version);
+// immich version plus the immich-with-better-sharing revision, e.g. v3.3.3.0
+export const displayVersion = `v${version}.${forkRevision ?? 0}`;
+export const forkRepositoryUrl = 'https://github.com/Leonetienne/immich-with-better-sharing';
 
 export const citiesFile = 'cities500.txt';
 export const reverseGeocodeMaxDistance = 25_000;
