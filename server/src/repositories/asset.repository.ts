@@ -58,6 +58,10 @@ import { globToPostgresRegex } from 'src/utils/misc.js';
 
 export type AssetStats = Record<AssetType, number>;
 
+// Owner's favorite comes from asset.isFavorite, everyone else's from asset_user_favorite.
+const isFavoriteFor = (userId: string) =>
+  sql<boolean>`case when asset."ownerId" = ${userId} then asset."isFavorite" else exists (select 1 from asset_user_favorite where asset_user_favorite."assetId" = asset.id and asset_user_favorite."userId" = ${userId}) end`;
+
 export interface BoundingBox {
   west: number;
   south: number;
@@ -632,6 +636,41 @@ export class AssetRepository {
     await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
   }
 
+  @Chunked({ paramIndex: 1 })
+  async setUserFavorite(userId: string, ids: string[], isFavorite: boolean): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+
+    if (isFavorite) {
+      await this.db
+        .insertInto('asset_user_favorite')
+        .values(ids.map((assetId) => ({ userId, assetId })))
+        .onConflict((oc) => oc.doNothing())
+        .execute();
+    } else {
+      await this.db
+        .deleteFrom('asset_user_favorite')
+        .where('userId', '=', userId)
+        .where('assetId', '=', anyUuid(ids))
+        .execute();
+    }
+  }
+
+  async getUserFavoriteIds(userId: string, ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset_user_favorite')
+      .select('assetId')
+      .where('userId', '=', userId)
+      .where('assetId', '=', anyUuid(ids))
+      .execute();
+    return new Set(rows.map((row) => row.assetId));
+  }
+
   async updateByLibraryId(libraryId: string, options: Updateable<AssetTable>): Promise<void> {
     await this.db.updateTable('asset').set(options).where('libraryId', '=', asUuid(libraryId)).execute();
   }
@@ -794,7 +833,9 @@ export class AssetRepository {
               return options.personId ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
             }),
           )
-          .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+          .$if(options.isFavorite !== undefined, (qb) =>
+            qb.where(isFavoriteFor(auth.user.id), '=', options.isFavorite!),
+          )
           .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
           .$if(options.isDuplicate !== undefined, (qb) =>
             qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
@@ -823,7 +864,7 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             'asset.visibility',
-            sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
+            isFavoriteFor(auth.user.id).as('isFavorite'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             'asset.livePhotoVideoId',
@@ -885,7 +926,9 @@ export class AssetRepository {
               return options.personId ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
             }),
           )
-          .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+          .$if(options.isFavorite !== undefined, (qb) =>
+            qb.where(isFavoriteFor(auth.user.id), '=', options.isFavorite!),
+          )
           .$if(!!options.withStacked, (qb) =>
             qb
               .where((eb) =>

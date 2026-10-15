@@ -385,15 +385,21 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     }
 
     case Permission.StackRead: {
-      return access.stack.checkOwnerAccess(auth.user.id, ids);
+      const isOwner = await access.stack.checkOwnerAccess(auth.user.id, ids);
+      const isPartner = await access.stack.checkPartnerAccess(auth.user.id, ids.difference(isOwner));
+      return isOwner.union(isPartner);
     }
 
     case Permission.StackUpdate: {
-      return access.stack.checkOwnerAccess(auth.user.id, ids);
+      const isOwner = await access.stack.checkOwnerAccess(auth.user.id, ids);
+      const isPartner = await access.stack.checkPartnerAccess(auth.user.id, ids.difference(isOwner));
+      return isOwner.union(isPartner);
     }
 
     case Permission.StackDelete: {
-      return access.stack.checkOwnerAccess(auth.user.id, ids);
+      const isOwner = await access.stack.checkOwnerAccess(auth.user.id, ids);
+      const isPartner = await access.stack.checkPartnerAccess(auth.user.id, ids.difference(isOwner));
+      return isOwner.union(isPartner);
     }
 
     case Permission.WorkflowRead:

@@ -159,6 +159,17 @@
         <ActionMenuItem action={Actions.RefreshMetadataJob} />
         <ActionMenuItem action={Actions.TranscodeVideoJob} />
       </ButtonContextMenu>
+    {:else if assetMultiSelectManager.isAllCuratable}
+      <FavoriteAction
+        removeFavorite={assetMultiSelectManager.isAllFavorite}
+        onFavorite={(ids, isFavorite) => timelineManager.update(ids, (asset) => (asset.isFavorite = isFavorite))}
+      />
+
+      <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
+        <DownloadAction menuItem />
+        <ActionMenuItem action={StackActions.Stack} />
+        <ActionMenuItem action={StackActions.Unstack} />
+      </ButtonContextMenu>
     {:else}
       <DownloadAction />
     {/if}

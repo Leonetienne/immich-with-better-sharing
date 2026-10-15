@@ -27,19 +27,25 @@ import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 import { navigate } from '$lib/utils/navigation';
 
+// A stack belongs to one owner, so a mixed selection falls back to the user's own assets.
+const getStackableAssets = () => {
+  const assets = assetMultiSelectManager.curatableAssets;
+  return new Set(assets.map(({ ownerId }) => ownerId)).size === 1 ? assets : assetMultiSelectManager.ownedAssets;
+};
+
 export const getStackBulkActions = ($t: MessageFormatter) => {
   const Stack: ActionItem = {
     title: $t('stack'),
     icon: mdiImageMultipleOutline,
-    $if: () => assetMultiSelectManager.ownedAssets.length > 1,
-    onAction: () => handleStack(assetMultiSelectManager.ownedAssets.map((asset) => asset.id)),
+    $if: () => getStackableAssets().length > 1,
+    onAction: () => handleStack(getStackableAssets().map((asset) => asset.id)),
   };
 
   const Unstack: ActionItem = {
     title: $t('unstack'),
     icon: mdiImageOffOutline,
-    $if: () => assetMultiSelectManager.ownedAssets.every((asset) => !!asset.stack),
-    onAction: () => handleDeleteStacks(assetMultiSelectManager.ownedAssets.map(({ stack }) => stack!)),
+    $if: () => assetMultiSelectManager.curatableAssets.every((asset) => !!asset.stack),
+    onAction: () => handleDeleteStacks(assetMultiSelectManager.curatableAssets.map(({ stack }) => stack!)),
   };
 
   return { Stack, Unstack };
@@ -48,7 +54,7 @@ export const getStackBulkActions = ($t: MessageFormatter) => {
 export const getStackActions = ($t: MessageFormatter, stack: StackResponseDto | undefined, asset: AssetResponseDto) => {
   const authUser = authManager.authenticated ? authManager.user : undefined;
   const isAssetOwner = !!(authUser && authUser.id === asset.ownerId);
-  const validStack = !!stack && isAssetOwner;
+  const validStack = !!stack && authManager.canCurate(asset.ownerId);
 
   const AddUploads: ActionItem = {
     title: $t('add_upload_to_stack', { values: { isStack: !!stack } }),
@@ -60,7 +66,7 @@ export const getStackActions = ($t: MessageFormatter, stack: StackResponseDto | 
   const KeepThisDeleteOthers: ActionItem = {
     title: $t('keep_this_delete_others'),
     icon: mdiPinOutline,
-    $if: () => validStack,
+    $if: () => validStack && isAssetOwner,
     onAction: () => handleKeepThisDeleteOthers(stack!, asset),
   };
 

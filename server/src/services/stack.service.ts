@@ -19,9 +19,9 @@ export class StackService extends BaseService {
   }
 
   async create(auth: AuthDto, dto: StackCreateDto): Promise<StackResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.assetIds });
+    const ownerId = await this.requireStackCreateAccess(auth, dto.assetIds);
 
-    const stack = await this.stackRepository.create({ ownerId: auth.user.id }, dto.assetIds);
+    const stack = await this.stackRepository.create({ ownerId }, dto.assetIds);
 
     await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: auth.user.id });
 
@@ -76,6 +76,31 @@ export class StackService extends BaseService {
 
     await this.assetRepository.update({ id: assetId, stackId: null });
     await this.eventRepository.emit('StackUpdate', { stackId, userId: auth.user.id });
+  }
+
+  // Stacks belong to the assets' owner, so partners may only stack assets of a single owner.
+  private async requireStackCreateAccess(auth: AuthDto, assetIds: string[]): Promise<string> {
+    const owned = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids: assetIds });
+    if (owned.size === new Set(assetIds).size) {
+      return auth.user.id;
+    }
+
+    if (owned.size > 0 || auth.sharedLink) {
+      throw new BadRequestException('Stack assets must belong to a single owner');
+    }
+
+    const partner = await this.accessRepository.asset.checkPartnerAccess(auth.user.id, new Set(assetIds));
+    if (partner.size !== new Set(assetIds).size) {
+      throw new BadRequestException(`Not found or no ${Permission.AssetUpdate} access`);
+    }
+
+    const assets = await this.assetRepository.getByIds(assetIds);
+    const ownerIds = new Set(assets.map((asset) => asset.ownerId));
+    if (ownerIds.size !== 1) {
+      throw new BadRequestException('Stack assets must belong to a single owner');
+    }
+
+    return [...ownerIds][0];
   }
 
   private findOrFail(id: string) {

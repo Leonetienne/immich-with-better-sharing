@@ -22,6 +22,8 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getLivePhotoCount: vitest.fn(),
     getLibraryAssetCount: vitest.fn(),
     updateAll: vitest.fn(),
+    setUserFavorite: vitest.fn(),
+    getUserFavoriteIds: vitest.fn().mockResolvedValue(new Set()),
     getByLibraryIdAndOriginalPath: vitest.fn(),
     deleteAll: vitest.fn(),
     update: vitest.fn(),

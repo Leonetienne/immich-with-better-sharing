@@ -38,6 +38,9 @@ export class TimelineService extends BaseService {
           timelineEnabled: !options.personId || undefined,
         });
         userIds.push(...partnerIds);
+      } else if (dto.isFavorite === true && userId === auth.user.id) {
+        const partnerIds = await getMyPartnerIds({ userId: auth.user.id, repository: this.partnerRepository });
+        userIds.push(...partnerIds);
       }
     }
 
@@ -77,12 +80,11 @@ export class TimelineService extends BaseService {
     if (dto.withPartners) {
       const isRequestedLocked = dto.visibility === AssetVisibility.Locked;
       const isRequestedArchived = dto.visibility === AssetVisibility.Archive || dto.visibility === undefined;
-      const isRequestedFavorite = dto.isFavorite === true || dto.isFavorite === false;
       const isRequestedTrash = dto.isTrashed === true;
 
-      if (isRequestedLocked || isRequestedArchived || isRequestedFavorite || isRequestedTrash) {
+      if (isRequestedLocked || isRequestedArchived || isRequestedTrash) {
         throw new BadRequestException(
-          'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
+          'withPartners is only supported for non-archived, non-trashed, non-locked assets',
         );
       }
     }
