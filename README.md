@@ -1,8 +1,6 @@
 ## What is this?
 A modified version of immich with advanced sharing features to be experimented with.
 
-### A word of caution
-
 > [!WARNING]
 > This is a highly experimental, modified version of immich with some custom features.
 > This is not intended to be used in any production environment. To make it very clear: I am just toying around with this.
