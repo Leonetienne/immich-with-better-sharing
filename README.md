@@ -1,14 +1,23 @@
 ## What is this?
-This is an experimental, modified version of immich with some custom features.  
-!!! DO NOT USE THIS IN PRODUCTION AS THIS IS NOT AS STABLE AS UPSTREAM IMMICH AND PROBABLY HAS SECURITY ISSUES !!!  
-!!! While these features DO work, they are entirely ai-made without proper monitoring and thus considered unsafe. If you want to use this, DO SO AT YOUR OWN RISK !!!   
-This is intended to be used in a homelab environment for experimental purposes.
+A modified version of immich with advanced sharing features to be experimented with.
+
+### A word of caution
+
+> [!WARNING]
+> This is a highly experimental, modified version of immich with some custom features.
+> This is not intended to be used in any production environment. To make it very clear: I am just toying around with this.
+> While these features DO work and are tested, they are entirely ai-made without proper monitoring and thus must be considered unsafe.
+> Futureproofness of this repository is also not good, while this is up-to-date with immich at the time of writing, upgrades will probably be sparse.
+> This is really intended to be used in a homelab environment for experimental purposes, **without being exposed to the internet**.
 
 Additional features:
 - Users can favourite assets shared with them
 - Users can allow partners to edit their assets (crop, rotate, metadata, stacking, ...)
 - Locked albums (Multiple locked folders, shareable with other users)
-- TOTP MFA for user auth
+- TOTP MFA for user auth (will not work with the mobile app)
+
+
+CURRENTLY MIRRORED IMMICH SERVER VERSION: 3.3.0
 
 <p align="center"> 
   <br/>
