@@ -15,7 +15,7 @@ Additional features:
 - TOTP MFA for user auth (will not work with the mobile app)
 
 
-CURRENTLY MIRRORED IMMICH SERVER VERSION: 3.3.3
+CURRENTLY MIRRORED IMMICH SERVER VERSION: 3.3.5
 
 <p align="center"> 
   <br/>
